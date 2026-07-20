@@ -1,5 +1,5 @@
-// src/pages/Stock.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { db } from "../services/supabase";
 import { createItem, listItems } from "../services/items";
 import {
@@ -17,9 +17,7 @@ function toInt(v) {
   return Number.isFinite(n) ? n : 0;
 }
 function uid() {
-  return (
-    crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
-  );
+  return crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 function extFromName(name = "") {
   const p = name.split(".");
@@ -29,8 +27,26 @@ function normalizeItemPhotoPath(itemId, p) {
   if (!p) return null;
   const s = String(p);
   if (s.includes("/")) return s;
-  // якщо в БД лежить тільки ім'я файла — підставимо itemId/
   return `${itemId}/${s}`;
+}
+
+function IconEdit({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path d="M12 20h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+function IconShip({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path d="M3 7h11v10H3V7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
+      <path d="M14 10h4l3 3v4h-7v-7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
+      <path d="M7 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" stroke="currentColor" strokeWidth="2"/>
+      <path d="M17 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" stroke="currentColor" strokeWidth="2"/>
+    </svg>
+  );
 }
 
 function Modal({ open, onClose, children }) {
@@ -44,31 +60,54 @@ function Modal({ open, onClose, children }) {
   );
 }
 
-function Segmented({ value, onChange }) {
+function PhotoViewer({ open, urls, startIndex, onClose }) {
+  const rowRef = useRef(null);
+  const [idx, setIdx] = useState(startIndex ?? 0);
+
+  useEffect(() => {
+    if (!open) return;
+    setIdx(startIndex ?? 0);
+    requestAnimationFrame(() => {
+      const el = rowRef.current;
+      if (!el) return;
+      const slide = el.children[startIndex ?? 0];
+      if (slide?.scrollIntoView) slide.scrollIntoView({ behavior: "instant", inline: "start" });
+    });
+  }, [open, startIndex, urls?.length]);
+
+  function onScroll() {
+    const el = rowRef.current;
+    if (!el) return;
+    const w = el.clientWidth || 1;
+    const next = Math.round(el.scrollLeft / w);
+    setIdx(next);
+  }
+
+  if (!open) return null;
+
   return (
-    <div className="seg">
-      <button
-        type="button"
-        className={`segBtn ${value === "stock" ? "active" : ""}`}
-        onClick={() => onChange("stock")}
-      >
-        Склад
-      </button>
-      <button
-        type="button"
-        className={`segBtn ${value === "ship" ? "active" : ""}`}
-        onClick={() => onChange("ship")}
-      >
-        Відправлення
-      </button>
+    <div className="viewerOverlay" onClick={onClose}>
+      <div className="viewerTop" onClick={(e) => e.stopPropagation()}>
+        <div className="viewerCount">
+          {urls?.length ? `${idx + 1} / ${urls.length}` : ""}
+        </div>
+        <button className="viewerClose" type="button" onClick={onClose}>Закрити</button>
+      </div>
+
+      <div className="viewerRow" ref={rowRef} onScroll={onScroll} onClick={(e) => e.stopPropagation()}>
+        {urls.map((u) => (
+          <div className="viewerSlide" key={u}>
+            <img className="viewerImg" src={u} alt="" />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
-function PhotoBoxSquare({ urls }) {
-  // квадратний медіа-блок як на прикладі, фото "вписується" в блок
+function PhotoBoxSquare({ urls, onOpenViewer }) {
   return (
-    <div className="pMedia">
+    <div className="pMedia" role="button" onClick={onOpenViewer} style={{ cursor: urls?.length ? "pointer" : "default" }}>
       <div className="pMediaRow">
         {urls?.length ? (
           urls.map((u) => (
@@ -86,7 +125,7 @@ function PhotoBoxSquare({ urls }) {
   );
 }
 
-function ProductCard({ item, onOpen, onShip }) {
+function ProductCard({ item, onOpen, onShip, onOpenViewer }) {
   const urls = (item.photo_paths ?? [])
     .map((p) => normalizeItemPhotoPath(item.id, p))
     .filter(Boolean)
@@ -98,10 +137,8 @@ function ProductCard({ item, onOpen, onShip }) {
 
   const price = Number(item.sale_price ?? 0);
   const cost = Number(item.cost ?? 0);
-  const margin =
-    price > 0 ? Math.max(0, Math.round(((price - cost) / price) * 100)) : 0;
+  const margin = price > 0 ? Math.max(0, Math.round(((price - cost) / price) * 100)) : 0;
 
-  // "Одяг" як в прикладі: без нового поля беремо коротку note як тег
   const tag =
     item.note && String(item.note).trim().length <= 12
       ? String(item.note).trim()
@@ -118,7 +155,7 @@ function ProductCard({ item, onOpen, onShip }) {
         ) : null}
       </div>
 
-      <PhotoBoxSquare urls={urls} />
+      <PhotoBoxSquare urls={urls} onOpenViewer={urls.length ? onOpenViewer : undefined} />
 
       <div className="pBody">
         <div className="pTitle">{item.title}</div>
@@ -145,8 +182,8 @@ function ProductCard({ item, onOpen, onShip }) {
           </div>
 
           <div className="pActions">
-            <button type="button" className="iconAction" onClick={onOpen} title="Відкрити / редагувати">
-              ✎
+            <button type="button" className="iconAction" onClick={onOpen} title="Відкрити">
+              <IconEdit />
             </button>
             <button
               type="button"
@@ -155,7 +192,7 @@ function ProductCard({ item, onOpen, onShip }) {
               title="Відправити"
               disabled={qty <= 0}
             >
-              ⤴
+              <IconShip />
             </button>
           </div>
         </div>
@@ -179,13 +216,7 @@ function AddPhotoCarousel({ photos, onAdd, onRemove }) {
             {photos.map((p, idx) => (
               <div className="photoSlide" key={p.url}>
                 <img className="photoImg" src={p.url} alt="" />
-                <button
-                  type="button"
-                  className="photoRemove"
-                  onClick={() => onRemove(idx)}
-                  aria-label="Remove photo"
-                  title="Видалити"
-                >
+                <button type="button" className="photoRemove" onClick={() => onRemove(idx)} title="Видалити">
                   ✕
                 </button>
               </div>
@@ -202,31 +233,35 @@ function AddPhotoCarousel({ photos, onAdd, onRemove }) {
 }
 
 export default function Stock() {
-  const [tab, setTab] = useState("stock"); // stock | ship
-  const [items, setItems] = useState([]);
-  const [shipments, setShipments] = useState([]);
+  const navigate = useNavigate();
 
+  const [items, setItems] = useState([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
-  // create item modal
+  // viewer
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerUrls, setViewerUrls] = useState([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+
+  // create
   const [createOpen, setCreateOpen] = useState(false);
   const [busyCreate, setBusyCreate] = useState(false);
   const [createForm, setCreateForm] = useState({
     title: "",
     size: "",
     sku: "",
-    note: "", // коротка note може бути "тегом" як на прикладі
+    note: "",
     cost: "0",
     sale_price: "0",
     qty_in_stock: "0",
     qty_in_delivery: "0",
   });
-  const [createPhotos, setCreatePhotos] = useState([]); // [{file,url}]
+  const [createPhotos, setCreatePhotos] = useState([]);
   const createInputRef = useRef(null);
 
-  // edit modal
+  // edit
   const [editOpen, setEditOpen] = useState(false);
   const [busyEdit, setBusyEdit] = useState(false);
   const [activeItem, setActiveItem] = useState(null);
@@ -238,10 +273,10 @@ export default function Stock() {
     cost: "0",
     sale_price: "0",
   });
-  const [editNewPhotos, setEditNewPhotos] = useState([]); // new photos only
+  const [editNewPhotos, setEditNewPhotos] = useState([]);
   const editInputRef = useRef(null);
 
-  // ship modal
+  // ship
   const [shipOpen, setShipOpen] = useState(false);
   const [busyShip, setBusyShip] = useState(false);
   const [shipItem, setShipItem] = useState(null);
@@ -252,74 +287,35 @@ export default function Stock() {
     branch: "",
     qty: "1",
   });
-  const [shipPhotos, setShipPhotos] = useState([]); // [{file,url}]
+  const [shipPhotos, setShipPhotos] = useState([]);
   const shipInputRef = useRef(null);
 
   function revokePreviews(arr) {
     for (const p of arr) {
-      try {
-        URL.revokeObjectURL(p.url);
-      } catch {}
+      try { URL.revokeObjectURL(p.url); } catch {}
     }
   }
 
-  async function loadStock() {
+  async function load() {
     setLoading(true);
     setErr("");
     try {
       const data = await listItems();
       setItems(data ?? []);
     } catch (e) {
-      setErr(e?.message ?? "Помилка завантаження складу");
+      setErr(e?.message ?? "Помилка завантаження");
     } finally {
       setLoading(false);
     }
   }
 
-  async function loadShipments() {
-    setErr("");
-    try {
-      const { data, error } = await db
-        .from("item_events")
-        .select("id, type, qty, created_at, meta, items(id, title, size, sku, photo_paths)")
-        .eq("type", "ship")
-        .order("created_at", { ascending: false })
-        .limit(200);
+  useEffect(() => { load(); }, []);
 
-      if (error) throw error;
-      setShipments(data ?? []);
-    } catch (e) {
-      setErr(e?.message ?? "Помилка завантаження відправлень");
-    }
-  }
-
-  useEffect(() => {
-    loadStock();
-  }, []);
-
-  useEffect(() => {
-    if (tab === "ship") loadShipments();
-  }, [tab]);
-
-  useEffect(() => {
-    function onKeyDown(e) {
-      if (e.key === "Escape") {
-        setCreateOpen(false);
-        setEditOpen(false);
-        setShipOpen(false);
-      }
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
-
-  // chooser helpers
   function onFilesSelected(setter) {
     return (e) => {
       const files = Array.from(e.target.files || []);
       e.target.value = "";
       if (!files.length) return;
-
       setter((prev) => [
         ...prev,
         ...files
@@ -328,6 +324,7 @@ export default function Stock() {
       ]);
     };
   }
+
   function removePhoto(setter) {
     return (idx) => {
       setter((prev) => {
@@ -348,17 +345,11 @@ export default function Stock() {
     );
   }, [items, q]);
 
-  const filteredShipments = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s) return shipments;
-    return shipments.filter((x) => {
-      const it = x.items;
-      const meta = x.meta || {};
-      return `${it?.title ?? ""} ${it?.size ?? ""} ${it?.sku ?? ""} ${meta.full_name ?? ""} ${meta.phone ?? ""} ${meta.city ?? ""}`
-        .toLowerCase()
-        .includes(s);
-    });
-  }, [shipments, q]);
+  function openViewer(urls, start = 0) {
+    setViewerUrls(urls);
+    setViewerIndex(start);
+    setViewerOpen(true);
+  }
 
   function openCreate() {
     setErr("");
@@ -372,18 +363,12 @@ export default function Stock() {
       qty_in_stock: "0",
       qty_in_delivery: "0",
     });
-    setCreatePhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setCreatePhotos((prev) => { revokePreviews(prev); return []; });
     setCreateOpen(true);
   }
   function closeCreate() {
     setCreateOpen(false);
-    setCreatePhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setCreatePhotos((prev) => { revokePreviews(prev); return []; });
   }
 
   function openEdit(item) {
@@ -397,50 +382,31 @@ export default function Stock() {
       cost: String(item.cost ?? 0),
       sale_price: String(item.sale_price ?? 0),
     });
-    setEditNewPhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setEditNewPhotos((prev) => { revokePreviews(prev); return []; });
     setEditOpen(true);
   }
   function closeEdit() {
     setEditOpen(false);
     setActiveItem(null);
-    setEditNewPhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setEditNewPhotos((prev) => { revokePreviews(prev); return []; });
   }
 
   function openShip(item) {
     setErr("");
     setShipItem(item);
-    setShipForm({
-      full_name: "",
-      phone: "",
-      city: "",
-      branch: "",
-      qty: "1",
-    });
-    setShipPhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setShipForm({ full_name: "", phone: "", city: "", branch: "", qty: "1" });
+    setShipPhotos((prev) => { revokePreviews(prev); return []; });
     setShipOpen(true);
   }
   function closeShip() {
     setShipOpen(false);
     setShipItem(null);
-    setShipPhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setShipPhotos((prev) => { revokePreviews(prev); return []; });
   }
 
   async function onCreateSubmit(e) {
     e.preventDefault();
     setErr("");
-
     const title = createForm.title.trim();
     if (!title) return setErr("Вкажи назву товару");
 
@@ -458,18 +424,12 @@ export default function Stock() {
     setBusyCreate(true);
     try {
       const created = await createItem(payload);
-
       for (const p of createPhotos) {
         const path = await uploadItemPhoto({ itemId: created.id, file: p.file });
         await appendItemPhotoPath(created.id, path);
       }
-
-      setCreateOpen(false);
-      setCreatePhotos((prev) => {
-        revokePreviews(prev);
-        return [];
-      });
-      await loadStock();
+      closeCreate();
+      await load();
     } catch (e2) {
       setErr(e2?.message ?? "Помилка створення");
     } finally {
@@ -480,7 +440,6 @@ export default function Stock() {
   async function onEditSave() {
     if (!activeItem) return;
     setErr("");
-
     const title = editForm.title.trim();
     if (!title) return setErr("Вкажи назву товару");
 
@@ -504,7 +463,7 @@ export default function Stock() {
       }
 
       closeEdit();
-      await loadStock();
+      await load();
     } catch (e) {
       setErr(e?.message ?? "Помилка збереження");
     } finally {
@@ -514,12 +473,13 @@ export default function Stock() {
 
   async function uploadShipmentPhoto(eventId, file) {
     const path = `shipments/${eventId}/${uid()}.${extFromName(file.name)}`;
-    const { error } = await db.storage.from("item-photos").upload(path, file, {
+    const { data, error } = await db.storage.from("item-photos").upload(path, file, {
       cacheControl: "3600",
       upsert: false,
+      contentType: file.type || "image/jpeg",
     });
     if (error) throw error;
-    return path;
+    return data?.path ?? path;
   }
 
   async function shipSubmit(e) {
@@ -552,6 +512,7 @@ export default function Stock() {
       });
       if (rpcErr) throw rpcErr;
 
+      // фото доставки -> записати в item_events.meta.photo_paths (щоб Home показував)
       const uploaded = [];
       for (const p of shipPhotos) {
         const path = await uploadShipmentPhoto(eventId, p.file);
@@ -559,11 +520,7 @@ export default function Stock() {
       }
 
       if (uploaded.length) {
-        const { data: row, error: e1 } = await db
-          .from("item_events")
-          .select("meta")
-          .eq("id", eventId)
-          .single();
+        const { data: row, error: e1 } = await db.from("item_events").select("meta").eq("id", eventId).single();
         if (e1) throw e1;
 
         const meta = row?.meta ?? {};
@@ -574,8 +531,10 @@ export default function Stock() {
       }
 
       closeShip();
-      await loadStock();
-      if (tab === "ship") await loadShipments();
+      await load();
+
+      // Перекинути на Головну — там відразу буде картка доставки
+      navigate("/");
     } catch (e2) {
       setErr(e2?.message ?? "Помилка відправлення");
     } finally {
@@ -586,120 +545,46 @@ export default function Stock() {
   return (
     <section>
       <div className="stockTop">
-        <Segmented value={tab} onChange={setTab} />
-
         <input
+          className="input"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder={tab === "stock" ? "Пошук товарів..." : "Пошук відправлень..."}
-          className="input"
+          placeholder="Пошук товарів..."
           style={{ flex: "1 1 260px" }}
         />
-
-        {tab === "stock" ? (
-          <button className="btnSecondary" onClick={loadStock} type="button">
-            Оновити
-          </button>
-        ) : (
-          <button className="btnSecondary" onClick={loadShipments} type="button">
-            Оновити
-          </button>
-        )}
+        <button className="btnSecondary" onClick={load} type="button">Оновити</button>
       </div>
 
       {err ? <div className="errorBox">{err}</div> : null}
       {loading ? <p style={{ marginTop: 10 }}>Завантаження...</p> : null}
 
-      {tab === "stock" ? (
-        <>
-          <div className="premiumGrid">
-            {filteredItems.map((x) => (
-              <ProductCard
-                key={x.id}
-                item={x}
-                onOpen={() => openEdit(x)}
-                onShip={() => openShip(x)}
-              />
-            ))}
-          </div>
+      <div className="premiumGrid">
+        {filteredItems.map((x) => {
+          const urls = (x.photo_paths ?? [])
+            .map((p) => normalizeItemPhotoPath(x.id, p))
+            .filter(Boolean)
+            .map(getPublicPhotoUrl);
 
-          {/* ДОДАТИ — вниз по центру */}
-          <button className="fabAdd" type="button" onClick={openCreate} aria-label="Add item">
-            + Додати
-          </button>
-          <div style={{ height: 84 }} />
-        </>
-      ) : null}
+          return (
+            <ProductCard
+              key={x.id}
+              item={x}
+              onOpen={() => openEdit(x)}
+              onShip={() => openShip(x)}
+              onOpenViewer={() => openViewer(urls, 0)}
+            />
+          );
+        })}
+      </div>
 
-      {tab === "ship" ? (
-        <div className="shipGrid">
-          {filteredShipments.map((ev) => {
-            const it = ev.items;
-            const meta = ev.meta || {};
-            const shipPhotoUrls = (meta.photo_paths ?? []).map(getPublicPhotoUrl);
+      <button className="fabAdd" type="button" onClick={openCreate}>+ Додати</button>
+      <div style={{ height: 84 }} />
 
-            return (
-              <div className="shipCard" key={ev.id}>
-                <div className="shipCardTop">
-                  <div className="shipTitle">
-                    {it?.title ?? "Товар"} {it?.size ? `• ${it.size}` : ""}
-                  </div>
-                  <div className="shipQty">К-сть: {ev.qty}</div>
-                </div>
+      <input ref={createInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setCreatePhotos)} style={{ display: "none" }} />
+      <input ref={editInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setEditNewPhotos)} style={{ display: "none" }} />
+      <input ref={shipInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setShipPhotos)} style={{ display: "none" }} />
 
-                <div className="shipMeta">
-                  <div><b>ПІБ:</b> {meta.full_name}</div>
-                  <div><b>Тел:</b> {meta.phone}</div>
-                  <div><b>Місто:</b> {meta.city}</div>
-                  <div><b>Відділення:</b> {meta.branch}</div>
-                </div>
-
-                {shipPhotoUrls.length ? (
-                  <div className="shipPhotos">
-                    <div className="shipPhotosRow">
-                      {shipPhotoUrls.map((u) => (
-                        <div className="shipPhoto" key={u}>
-                          <img src={u} alt="" />
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-
-                <div className="shipTime">{new Date(ev.created_at).toLocaleString()}</div>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-
-      {/* hidden choosers */}
-      <input
-        ref={createInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        onChange={onFilesSelected(setCreatePhotos)}
-        style={{ display: "none" }}
-      />
-      <input
-        ref={editInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        onChange={onFilesSelected(setEditNewPhotos)}
-        style={{ display: "none" }}
-      />
-      <input
-        ref={shipInputRef}
-        type="file"
-        accept="image/*"
-        multiple
-        onChange={onFilesSelected(setShipPhotos)}
-        style={{ display: "none" }}
-      />
-
-      {/* CREATE MODAL */}
+      {/* CREATE */}
       <Modal open={createOpen} onClose={closeCreate}>
         <div className="modalHeader">
           <div>
@@ -717,102 +602,52 @@ export default function Stock() {
           />
 
           <form id="createForm" onSubmit={onCreateSubmit} className="form">
-            <label>
-              Назва
-              <input
-                className="input"
-                value={createForm.title}
-                onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })}
-              />
+            <label>Назва
+              <input className="input" value={createForm.title} onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })} />
             </label>
 
             <div className="row2">
-              <label>
-                Розмір
-                <input
-                  className="input"
-                  value={createForm.size}
-                  onChange={(e) => setCreateForm({ ...createForm, size: e.target.value })}
-                />
+              <label>Розмір
+                <input className="input" value={createForm.size} onChange={(e) => setCreateForm({ ...createForm, size: e.target.value })} />
               </label>
-
-              <label>
-                SKU
-                <input
-                  className="input"
-                  value={createForm.sku}
-                  onChange={(e) => setCreateForm({ ...createForm, sku: e.target.value })}
-                />
+              <label>SKU
+                <input className="input" value={createForm.sku} onChange={(e) => setCreateForm({ ...createForm, sku: e.target.value })} />
               </label>
             </div>
 
-            <label>
-              Тег (короткий) / Нотатка
-              <input
-                className="input"
-                value={createForm.note}
-                onChange={(e) => setCreateForm({ ...createForm, note: e.target.value })}
-                placeholder="Напр. Одяг"
-              />
+            <label>Тег/Нотатка
+              <input className="input" value={createForm.note} onChange={(e) => setCreateForm({ ...createForm, note: e.target.value })} placeholder="Напр. Одяг" />
             </label>
 
             <div className="row2">
-              <label>
-                Собівартість
-                <input
-                  className="input"
-                  inputMode="decimal"
-                  value={createForm.cost}
-                  onChange={(e) => setCreateForm({ ...createForm, cost: e.target.value })}
-                />
+              <label>Собівартість
+                <input className="input" inputMode="decimal" value={createForm.cost} onChange={(e) => setCreateForm({ ...createForm, cost: e.target.value })} />
               </label>
-
-              <label>
-                Ціна продажу
-                <input
-                  className="input"
-                  inputMode="decimal"
-                  value={createForm.sale_price}
-                  onChange={(e) => setCreateForm({ ...createForm, sale_price: e.target.value })}
-                />
+              <label>Ціна продажу
+                <input className="input" inputMode="decimal" value={createForm.sale_price} onChange={(e) => setCreateForm({ ...createForm, sale_price: e.target.value })} />
               </label>
             </div>
 
             <div className="row2">
-              <label>
-                В наявності
-                <input
-                  className="input"
-                  inputMode="numeric"
-                  value={createForm.qty_in_stock}
-                  onChange={(e) => setCreateForm({ ...createForm, qty_in_stock: e.target.value })}
-                />
+              <label>В наявності
+                <input className="input" inputMode="numeric" value={createForm.qty_in_stock} onChange={(e) => setCreateForm({ ...createForm, qty_in_stock: e.target.value })} />
               </label>
-
-              <label>
-                В доставці
-                <input
-                  className="input"
-                  inputMode="numeric"
-                  value={createForm.qty_in_delivery}
-                  onChange={(e) => setCreateForm({ ...createForm, qty_in_delivery: e.target.value })}
-                />
+              <label>В доставці
+                <input className="input" inputMode="numeric" value={createForm.qty_in_delivery} onChange={(e) => setCreateForm({ ...createForm, qty_in_delivery: e.target.value })} />
               </label>
             </div>
           </form>
         </div>
 
         <div className="modalFooter">
-          <button className="btnSecondary" type="button" onClick={closeCreate} disabled={busyCreate}>
-            Скасувати
-          </button>
+          <button className="btnSecondary" type="button" onClick={closeCreate} disabled={busyCreate}>Скасувати</button>
           <button className="btn" form="createForm" type="submit" disabled={busyCreate}>
             {busyCreate ? "Зберігаю..." : "Створити"}
           </button>
         </div>
       </Modal>
 
-      {/* EDIT MODAL */}
+      {/* EDIT */}
       <Modal open={editOpen} onClose={closeEdit}>
         <div className="modalHeader">
           <div>
@@ -830,9 +665,10 @@ export default function Stock() {
                   {(activeItem.photo_paths ?? []).length ? (
                     (activeItem.photo_paths ?? []).map((p) => {
                       const norm = normalizeItemPhotoPath(activeItem.id, p);
+                      const url = getPublicPhotoUrl(norm);
                       return (
-                        <div className="photoSlide" key={p}>
-                          <img className="photoImg" src={getPublicPhotoUrl(norm)} alt="" />
+                        <div className="photoSlide" key={p} onClick={() => openViewer((activeItem.photo_paths ?? []).map(pp => getPublicPhotoUrl(normalizeItemPhotoPath(activeItem.id, pp))), 0)}>
+                          <img className="photoImg" src={url} alt="" />
                         </div>
                       );
                     })
@@ -857,64 +693,30 @@ export default function Stock() {
                 />
               ) : null}
 
-              <form className="form" id="editForm" onSubmit={(e) => e.preventDefault()}>
-                <label>
-                  Назва
-                  <input
-                    className="input"
-                    value={editForm.title}
-                    onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                  />
+              <form className="form" onSubmit={(e) => e.preventDefault()}>
+                <label>Назва
+                  <input className="input" value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
                 </label>
 
                 <div className="row2">
-                  <label>
-                    Розмір
-                    <input
-                      className="input"
-                      value={editForm.size}
-                      onChange={(e) => setEditForm({ ...editForm, size: e.target.value })}
-                    />
+                  <label>Розмір
+                    <input className="input" value={editForm.size} onChange={(e) => setEditForm({ ...editForm, size: e.target.value })} />
                   </label>
-
-                  <label>
-                    SKU
-                    <input
-                      className="input"
-                      value={editForm.sku}
-                      onChange={(e) => setEditForm({ ...editForm, sku: e.target.value })}
-                    />
+                  <label>SKU
+                    <input className="input" value={editForm.sku} onChange={(e) => setEditForm({ ...editForm, sku: e.target.value })} />
                   </label>
                 </div>
 
-                <label>
-                  Тег/Нотатка
-                  <input
-                    className="input"
-                    value={editForm.note}
-                    onChange={(e) => setEditForm({ ...editForm, note: e.target.value })}
-                  />
+                <label>Тег/Нотатка
+                  <input className="input" value={editForm.note} onChange={(e) => setEditForm({ ...editForm, note: e.target.value })} />
                 </label>
 
                 <div className="row2">
-                  <label>
-                    Собівартість
-                    <input
-                      className="input"
-                      inputMode="decimal"
-                      value={editForm.cost}
-                      onChange={(e) => setEditForm({ ...editForm, cost: e.target.value })}
-                    />
+                  <label>Собівартість
+                    <input className="input" inputMode="decimal" value={editForm.cost} onChange={(e) => setEditForm({ ...editForm, cost: e.target.value })} />
                   </label>
-
-                  <label>
-                    Ціна продажу
-                    <input
-                      className="input"
-                      inputMode="decimal"
-                      value={editForm.sale_price}
-                      onChange={(e) => setEditForm({ ...editForm, sale_price: e.target.value })}
-                    />
+                  <label>Ціна продажу
+                    <input className="input" inputMode="decimal" value={editForm.sale_price} onChange={(e) => setEditForm({ ...editForm, sale_price: e.target.value })} />
                   </label>
                 </div>
               </form>
@@ -923,9 +725,7 @@ export default function Stock() {
         </div>
 
         <div className="modalFooter">
-          <button className="btnSecondary" type="button" onClick={closeEdit} disabled={busyEdit}>
-            Закрити
-          </button>
+          <button className="btnSecondary" type="button" onClick={closeEdit} disabled={busyEdit}>Закрити</button>
           {activeItem ? (
             <>
               <button className="btnSecondary" type="button" onClick={() => openShip(activeItem)} disabled={busyEdit}>
@@ -939,92 +739,62 @@ export default function Stock() {
         </div>
       </Modal>
 
-      {/* SHIP MODAL */}
+      {/* SHIP */}
       <Modal open={shipOpen} onClose={closeShip}>
         <div className="modalHeader">
           <div>
             <div className="modalTitle">Відправити</div>
-            <div className="modalSubtitle">
-              {shipItem ? `${shipItem.title}${shipItem.size ? ` • ${shipItem.size}` : ""}` : ""}
-            </div>
+            <div className="modalSubtitle">{shipItem ? shipItem.title : ""}</div>
           </div>
           <button className="iconBtn" onClick={closeShip} type="button">✕</button>
         </div>
 
         <div className="modalBody">
-          {shipItem ? (
-            <>
-              <AddPhotoCarousel
-                photos={shipPhotos}
-                onAdd={() => shipInputRef.current?.click()}
-                onRemove={removePhoto(setShipPhotos)}
-              />
+          <AddPhotoCarousel
+            photos={shipPhotos}
+            onAdd={() => shipInputRef.current?.click()}
+            onRemove={removePhoto(setShipPhotos)}
+          />
 
-              <form id="shipForm" onSubmit={shipSubmit} className="form">
-                <div className="row2">
-                  <label>
-                    ПІБ
-                    <input
-                      className="input"
-                      value={shipForm.full_name}
-                      onChange={(e) => setShipForm({ ...shipForm, full_name: e.target.value })}
-                    />
-                  </label>
+          <form id="shipForm" onSubmit={shipSubmit} className="form">
+            <div className="row2">
+              <label>ПІБ
+                <input className="input" value={shipForm.full_name} onChange={(e) => setShipForm({ ...shipForm, full_name: e.target.value })} />
+              </label>
+              <label>Телефон
+                <input className="input" inputMode="tel" value={shipForm.phone} onChange={(e) => setShipForm({ ...shipForm, phone: e.target.value })} />
+              </label>
+            </div>
 
-                  <label>
-                    Телефон
-                    <input
-                      className="input"
-                      inputMode="tel"
-                      value={shipForm.phone}
-                      onChange={(e) => setShipForm({ ...shipForm, phone: e.target.value })}
-                    />
-                  </label>
-                </div>
+            <div className="row2">
+              <label>Місто
+                <input className="input" value={shipForm.city} onChange={(e) => setShipForm({ ...shipForm, city: e.target.value })} />
+              </label>
+              <label>№ відділення
+                <input className="input" value={shipForm.branch} onChange={(e) => setShipForm({ ...shipForm, branch: e.target.value })} />
+              </label>
+            </div>
 
-                <div className="row2">
-                  <label>
-                    Місто
-                    <input
-                      className="input"
-                      value={shipForm.city}
-                      onChange={(e) => setShipForm({ ...shipForm, city: e.target.value })}
-                    />
-                  </label>
-
-                  <label>
-                    № відділення
-                    <input
-                      className="input"
-                      value={shipForm.branch}
-                      onChange={(e) => setShipForm({ ...shipForm, branch: e.target.value })}
-                    />
-                  </label>
-                </div>
-
-                <label>
-                  Кількість
-                  <input
-                    className="input"
-                    inputMode="numeric"
-                    value={shipForm.qty}
-                    onChange={(e) => setShipForm({ ...shipForm, qty: e.target.value })}
-                  />
-                </label>
-              </form>
-            </>
-          ) : null}
+            <label>Кількість
+              <input className="input" inputMode="numeric" value={shipForm.qty} onChange={(e) => setShipForm({ ...shipForm, qty: e.target.value })} />
+            </label>
+          </form>
         </div>
 
         <div className="modalFooter">
-          <button className="btnSecondary" type="button" onClick={closeShip} disabled={busyShip}>
-            Скасувати
-          </button>
+          <button className="btnSecondary" type="button" onClick={closeShip} disabled={busyShip}>Скасувати</button>
           <button className="btn" form="shipForm" type="submit" disabled={busyShip}>
             {busyShip ? "Відправляю..." : "Відправити"}
           </button>
         </div>
       </Modal>
+
+      <PhotoViewer
+        open={viewerOpen}
+        urls={viewerUrls}
+        startIndex={viewerIndex}
+        onClose={() => setViewerOpen(false)}
+      />
     </section>
   );
 }

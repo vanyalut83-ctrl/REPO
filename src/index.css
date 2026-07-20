@@ -830,3 +830,109 @@ html, body { overscroll-behavior: none; }
 }
 .btnDanger{ border:1px solid rgba(239,68,68,.25); background: rgba(239,68,68,.10); }
 .btnSuccess{ border:1px solid rgba(16,185,129,.25); background: rgba(16,185,129,.10); }
+
+/* ===== Photo viewer (lightbox) ===== */
+.viewerOverlay{
+  position: fixed;
+  inset: 0;
+  background: rgba(2,6,23,.72);
+  z-index: 999;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+.viewerTop{
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  color: #fff;
+}
+.viewerCount{ font-weight: 900; opacity: .9; }
+.viewerClose{
+  border: 1px solid rgba(255,255,255,.18);
+  background: rgba(255,255,255,.08);
+  color: #fff;
+  border-radius: 14px;
+  height: 40px;
+  padding: 0 14px;
+  cursor: pointer;
+  font-weight: 900;
+}
+.viewerRow{
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+.viewerSlide{
+  flex: 0 0 100%;
+  scroll-snap-align: start;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  box-sizing: border-box;
+}
+.viewerImg{
+  max-width: min(980px, 96vw);
+  max-height: 84vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 18px;
+  background: rgba(255,255,255,.04);
+  border: 1px solid rgba(255,255,255,.10);
+}
+
+/* ===== Shipment card (same pCard style) ===== */
+.pInfoSmall{
+  margin-top: 4px;
+  font-size: 12px;
+  color: rgba(11,18,32,.62);
+  font-weight: 700;
+}
+.shipStatusBtn{
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(37,99,235,.22);
+  background: rgba(37,99,235,.10);
+  font-weight: 950;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.shipActions{
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.shipBtnDanger, .shipBtnSuccess{
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  font-weight: 950;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.shipBtnDanger{
+  border: 1px solid rgba(239,68,68,.25);
+  background: rgba(239,68,68,.10);
+  color: #991B1B;
+}
+.shipBtnSuccess{
+  border: 1px solid rgba(16,185,129,.25);
+  background: rgba(16,185,129,.10);
+  color: #067647;
+}
+.shipMetaLine{
+  margin-top: 10px;
+  font-size: 12px;
+  color: rgba(11,18,32,.60);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
