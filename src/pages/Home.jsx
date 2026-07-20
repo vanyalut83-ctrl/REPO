@@ -1,4 +1,3 @@
-// src/pages/Home.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../services/supabase";
 import { getPublicPhotoUrl } from "../services/photos";
@@ -74,20 +73,11 @@ function PhotoViewer({ open, urls, startIndex, onClose }) {
   return (
     <div className="viewerOverlay" onClick={onClose}>
       <div className="viewerTop" onClick={(e) => e.stopPropagation()}>
-        <div className="viewerCount">
-          {urls?.length ? `${idx + 1} / ${urls.length}` : ""}
-        </div>
-        <button className="viewerClose" type="button" onClick={onClose}>
-          Закрити
-        </button>
+        <div className="viewerCount">{urls?.length ? `${idx + 1} / ${urls.length}` : ""}</div>
+        <button className="viewerClose" type="button" onClick={onClose}>Закрити</button>
       </div>
 
-      <div
-        className="viewerRow"
-        ref={rowRef}
-        onScroll={onScroll}
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="viewerRow" ref={rowRef} onScroll={onScroll} onClick={(e) => e.stopPropagation()}>
         {urls.map((u) => (
           <div className="viewerSlide" key={u}>
             <img className="viewerImg" src={u} alt="" />
@@ -123,28 +113,26 @@ function PhotoBoxSquare({ urls, onOpenViewer }) {
   );
 }
 
-function ShipmentCard({
-  ev,
-  actionsOpen,
-  onToggleActions,
-  onRefused,
-  onReceived,
-  onOpenViewer,
-}) {
+function ShipmentCard({ ev, onStartTransit, onRefused, onReceived, onOpenViewer, busy }) {
   const it = ev.items;
   const meta = ev.meta || {};
 
-  // ВАЖЛИВО: спочатку фото товару зі складу, а В КІНЦІ фото, додані при відправленні
+  // Фото: спочатку зі складу, потім (в кінці) фото додані при відправленні
   const itemUrls = (it?.photo_paths ?? [])
     .map((p) => normalizeItemPhotoPath(it.id, p))
     .filter(Boolean)
     .map(getPublicPhotoUrl);
 
   const shipUrls = (meta.photo_paths ?? []).map(getPublicPhotoUrl);
-
   const urls = uniq([...itemUrls, ...shipUrls]);
 
+  const status = ev.status; // waiting | in_transit | ...
   const title = `${it?.title ?? "Товар"}${it?.size ? ` • ${it.size}` : ""}`;
+
+  const pill =
+    status === "waiting"
+      ? { text: "очікування", bg: "rgba(37,99,235,.10)", br: "rgba(37,99,235,.18)", dot: "#2563eb", col: "#1d4ed8" }
+      : { text: "в дорозі", bg: "rgba(245,158,11,.12)", br: "rgba(245,158,11,.18)", dot: "#f59e0b", col: "#92400E" };
 
   return (
     <div className="pCard">
@@ -157,17 +145,8 @@ function ShipmentCard({
 
       <div className="pBody">
         <div className="pTitle" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ color: "#1d4ed8", display: "grid", placeItems: "center" }}>
-            <IconTruck />
-          </span>
-          <span
-            style={{
-              minWidth: 0,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            }}
-          >
+          <span style={{ color: "#1d4ed8", display: "grid", placeItems: "center" }}><IconTruck /></span>
+          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {title}
           </span>
         </div>
@@ -179,41 +158,36 @@ function ShipmentCard({
         <div className="pInfoRow" style={{ marginTop: 10 }}>
           <div className="pInfo">
             <div className="pInfoLabel">Клієнт</div>
-            <div className="pInfoValue" style={{ fontSize: 13 }}>
-              {meta.full_name || "—"}
-            </div>
+            <div className="pInfoValue" style={{ fontSize: 13 }}>{meta.full_name || "—"}</div>
             <div className="pInfoSmall">{meta.phone || ""}</div>
           </div>
 
           <div className="pInfo">
             <div className="pInfoLabel">Адреса</div>
-            <div className="pInfoValue" style={{ fontSize: 13 }}>
-              {meta.city || "—"}
-            </div>
+            <div className="pInfoValue" style={{ fontSize: 13 }}>{meta.city || "—"}</div>
             <div className="pInfoSmall">{meta.branch ? `Відділення: ${meta.branch}` : ""}</div>
           </div>
         </div>
 
         <div className="pFooter" style={{ marginTop: 12, alignItems: "center" }}>
-          {!actionsOpen ? (
-            <button className="shipStatusBtn" type="button" onClick={onToggleActions}>
+          {status === "waiting" ? (
+            <button className="shipStatusBtn" type="button" onClick={() => onStartTransit(ev.id)} disabled={busy}>
               Відправлено
             </button>
           ) : (
             <div className="shipActions">
-              <button className="shipBtnDanger" type="button" onClick={onRefused}>
+              <button className="shipBtnDanger" type="button" onClick={() => onRefused(ev.id)} disabled={busy}>
                 <IconX /> Відмова
               </button>
-              <button className="shipBtnSuccess" type="button" onClick={onReceived}>
+              <button className="shipBtnSuccess" type="button" onClick={() => onReceived(ev.id)} disabled={busy}>
                 <IconCheck /> Отримано
               </button>
             </div>
           )}
 
-          {/* прибрали "open" */}
-          <div className="pStockPill" style={{ background: "rgba(245,158,11,.12)", borderColor: "rgba(245,158,11,.18)", color: "#92400E" }}>
-            <span className="dot" style={{ background: "#f59e0b" }} />
-            <span>в дорозі</span>
+          <div className="pStockPill" style={{ background: pill.bg, borderColor: pill.br, color: pill.col }}>
+            <span className="dot" style={{ background: pill.dot }} />
+            <span>{pill.text}</span>
           </div>
         </div>
 
@@ -228,11 +202,11 @@ function ShipmentCard({
 
 export default function Home() {
   const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState(null);
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
 
   const [shipments, setShipments] = useState([]);
-  const [openActionsId, setOpenActionsId] = useState(null);
 
   // viewer
   const [viewerOpen, setViewerOpen] = useState(false);
@@ -247,7 +221,7 @@ export default function Home() {
         .from("item_events")
         .select("id, qty, created_at, status, meta, items(id, title, size, sku, photo_paths)")
         .eq("type", "ship")
-        .eq("status", "open")
+        .in("status", ["waiting", "in_transit"])
         .order("created_at", { ascending: false });
 
       if (error) throw error;
@@ -259,9 +233,7 @@ export default function Home() {
     }
   }
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -275,34 +247,54 @@ export default function Home() {
     });
   }, [shipments, q]);
 
+  function openViewer(urls, start = 0) {
+    setViewerUrls(urls);
+    setViewerIndex(start);
+    setViewerOpen(true);
+  }
+
+  async function startTransit(id) {
+    setErr("");
+    setBusyId(id);
+    try {
+      const { error } = await db.rpc("shipment_mark_in_transit", { p_ship_event_id: id });
+      if (error) throw error;
+
+      // швидко оновимо локально, щоб не чекати повного reload
+      setShipments((prev) => prev.map((x) => (x.id === id ? { ...x, status: "in_transit" } : x)));
+    } catch (e) {
+      setErr(e?.message ?? "Помилка: Відправлено");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function markReceived(id) {
     setErr("");
+    setBusyId(id);
     try {
       const { error } = await db.rpc("shipment_received", { p_ship_event_id: id });
       if (error) throw error;
-      setOpenActionsId(null);
       await load();
     } catch (e) {
       setErr(e?.message ?? "Помилка: Отримано");
+    } finally {
+      setBusyId(null);
     }
   }
 
   async function markRefused(id) {
     setErr("");
+    setBusyId(id);
     try {
       const { error } = await db.rpc("shipment_refused", { p_ship_event_id: id });
       if (error) throw error;
-      setOpenActionsId(null);
       await load();
     } catch (e) {
       setErr(e?.message ?? "Помилка: Відмова");
+    } finally {
+      setBusyId(null);
     }
-  }
-
-  function openViewer(urls, start = 0) {
-    setViewerUrls(urls);
-    setViewerIndex(start);
-    setViewerOpen(true);
   }
 
   return (
@@ -315,9 +307,7 @@ export default function Home() {
           placeholder="Пошук доставок: ПІБ / телефон / товар / місто..."
           style={{ flex: "1 1 260px" }}
         />
-        <button className="btnSecondary" onClick={load} type="button">
-          Оновити
-        </button>
+        <button className="btnSecondary" onClick={load} type="button">Оновити</button>
       </div>
 
       {err ? <div className="errorBox">{err}</div> : null}
@@ -334,17 +324,16 @@ export default function Home() {
             .map(getPublicPhotoUrl);
 
           const shipUrls = (meta.photo_paths ?? []).map(getPublicPhotoUrl);
-
           const urls = uniq([...itemUrls, ...shipUrls]);
 
           return (
             <ShipmentCard
               key={ev.id}
               ev={ev}
-              actionsOpen={openActionsId === ev.id}
-              onToggleActions={() => setOpenActionsId((prev) => (prev === ev.id ? null : ev.id))}
-              onRefused={() => markRefused(ev.id)}
-              onReceived={() => markReceived(ev.id)}
+              busy={busyId === ev.id}
+              onStartTransit={startTransit}
+              onRefused={markRefused}
+              onReceived={markReceived}
               onOpenViewer={() => openViewer(urls, 0)}
             />
           );
