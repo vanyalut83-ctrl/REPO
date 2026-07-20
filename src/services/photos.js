@@ -1,14 +1,12 @@
 import { db } from "./supabase";
-
 const BUCKET = "item-photos";
 
+function uid() {
+  return crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
 function extFromName(name = "") {
   const p = name.split(".");
   return (p.length > 1 ? p.pop() : "jpg").toLowerCase();
-}
-
-function uid() {
-  return (crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 }
 
 export function getPublicPhotoUrl(path) {
@@ -20,13 +18,16 @@ export async function uploadItemPhoto({ itemId, file }) {
   const ext = extFromName(file.name);
   const path = `${itemId}/${uid()}.${ext}`;
 
-  const { error } = await db.storage.from(BUCKET).upload(path, file, {
+  const { data, error } = await db.storage.from(BUCKET).upload(path, file, {
     cacheControl: "3600",
     upsert: false,
+    contentType: file.type || "image/jpeg",
   });
+
   if (error) throw error;
 
-  return path;
+  // важливо: повертаємо саме реальний шлях файла
+  return data?.path ?? path;
 }
 
 export async function appendItemPhotoPath(itemId, newPath) {
@@ -39,10 +40,7 @@ export async function appendItemPhotoPath(itemId, newPath) {
 
   const next = [...(row.photo_paths ?? []), newPath];
 
-  const { error: e2 } = await db
-    .from("items")
-    .update({ photo_paths: next })
-    .eq("id", itemId);
+  const { error: e2 } = await db.from("items").update({ photo_paths: next }).eq("id", itemId);
   if (e2) throw e2;
 
   return next;

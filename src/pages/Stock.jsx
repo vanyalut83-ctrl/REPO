@@ -17,19 +17,20 @@ function toInt(v) {
   return Number.isFinite(n) ? n : 0;
 }
 function uid() {
-  return crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  return (
+    crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`
+  );
 }
 function extFromName(name = "") {
   const p = name.split(".");
   return (p.length > 1 ? p.pop() : "jpg").toLowerCase();
 }
-
-// якщо в БД лежить тільки "filename.jpg" або "uuid", а файл в bucket як "itemId/filename.jpg"
 function normalizeItemPhotoPath(itemId, p) {
   if (!p) return null;
   const s = String(p);
-  if (s.includes("/")) return s; // вже нормальний шлях
-  return `${itemId}/${s}`; // підставимо itemId/
+  if (s.includes("/")) return s;
+  // якщо в БД лежить тільки ім'я файла — підставимо itemId/
+  return `${itemId}/${s}`;
 }
 
 function Modal({ open, onClose, children }) {
@@ -43,19 +44,121 @@ function Modal({ open, onClose, children }) {
   );
 }
 
-function PhotoStrip({ urls = [] }) {
+function Segmented({ value, onChange }) {
   return (
-    <div className="cardMedia">
-      <div className="cardMediaRow">
-        {urls.length ? (
+    <div className="seg">
+      <button
+        type="button"
+        className={`segBtn ${value === "stock" ? "active" : ""}`}
+        onClick={() => onChange("stock")}
+      >
+        Склад
+      </button>
+      <button
+        type="button"
+        className={`segBtn ${value === "ship" ? "active" : ""}`}
+        onClick={() => onChange("ship")}
+      >
+        Відправлення
+      </button>
+    </div>
+  );
+}
+
+function PhotoBoxSquare({ urls }) {
+  // квадратний медіа-блок як на прикладі, фото "вписується" в блок
+  return (
+    <div className="pMedia">
+      <div className="pMediaRow">
+        {urls?.length ? (
           urls.map((u) => (
-            <div className="cardMediaSlide" key={u}>
-              <img className="cardMediaImg" src={u} alt="" />
+            <div className="pMediaSlide" key={u}>
+              <img className="pMediaImg" src={u} alt="" />
             </div>
           ))
         ) : (
-          <div className="cardMediaEmpty">Нема фото</div>
+          <div className="pMediaEmpty">
+            <div className="pMediaIcon" />
+          </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function ProductCard({ item, onOpen, onShip }) {
+  const urls = (item.photo_paths ?? [])
+    .map((p) => normalizeItemPhotoPath(item.id, p))
+    .filter(Boolean)
+    .map(getPublicPhotoUrl);
+
+  const qty = item.qty_in_stock ?? 0;
+  const low = qty > 0 && qty <= 2;
+  const out = qty === 0;
+
+  const price = Number(item.sale_price ?? 0);
+  const cost = Number(item.cost ?? 0);
+  const margin =
+    price > 0 ? Math.max(0, Math.round(((price - cost) / price) * 100)) : 0;
+
+  // "Одяг" як в прикладі: без нового поля беремо коротку note як тег
+  const tag =
+    item.note && String(item.note).trim().length <= 12
+      ? String(item.note).trim()
+      : "Товар";
+
+  return (
+    <div className="pCard">
+      <div className="pBadges">
+        <div className="pBadge left">{tag}</div>
+        {out ? (
+          <div className="pBadge right danger">Нема</div>
+        ) : low ? (
+          <div className="pBadge right warn">Мало</div>
+        ) : null}
+      </div>
+
+      <PhotoBoxSquare urls={urls} />
+
+      <div className="pBody">
+        <div className="pTitle">{item.title}</div>
+        <div className="pSub">
+          {item.sku ? `SKU-${item.sku}` : item.size ? `Розмір: ${item.size}` : "—"}
+        </div>
+
+        <div className="pInfoRow">
+          <div className="pInfo">
+            <div className="pInfoLabel">Ціна продажу</div>
+            <div className="pInfoValue">₴ {item.sale_price ?? 0}</div>
+          </div>
+
+          <div className="pInfo success">
+            <div className="pInfoLabel">Маржа</div>
+            <div className="pInfoValue">{margin}%</div>
+          </div>
+        </div>
+
+        <div className="pFooter">
+          <div className="pStockPill">
+            <span className="dot" />
+            <span>{qty} шт</span>
+          </div>
+
+          <div className="pActions">
+            <button type="button" className="iconAction" onClick={onOpen} title="Відкрити / редагувати">
+              ✎
+            </button>
+            <button
+              type="button"
+              className="iconAction primary"
+              onClick={onShip}
+              title="Відправити"
+              disabled={qty <= 0}
+            >
+              ⤴
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -98,27 +201,6 @@ function AddPhotoCarousel({ photos, onAdd, onRemove }) {
   );
 }
 
-function Segmented({ value, onChange }) {
-  return (
-    <div className="seg">
-      <button
-        type="button"
-        className={`segBtn ${value === "stock" ? "active" : ""}`}
-        onClick={() => onChange("stock")}
-      >
-        Склад
-      </button>
-      <button
-        type="button"
-        className={`segBtn ${value === "ship" ? "active" : ""}`}
-        onClick={() => onChange("ship")}
-      >
-        Відправлення
-      </button>
-    </div>
-  );
-}
-
 export default function Stock() {
   const [tab, setTab] = useState("stock"); // stock | ship
   const [items, setItems] = useState([]);
@@ -135,7 +217,7 @@ export default function Stock() {
     title: "",
     size: "",
     sku: "",
-    note: "",
+    note: "", // коротка note може бути "тегом" як на прикладі
     cost: "0",
     sale_price: "0",
     qty_in_stock: "0",
@@ -232,33 +314,20 @@ export default function Stock() {
   }, []);
 
   // chooser helpers
-  function pickCreatePhotos() {
-    createInputRef.current?.click();
-  }
-  function pickEditPhotos() {
-    editInputRef.current?.click();
-  }
-  function pickShipPhotos() {
-    shipInputRef.current?.click();
-  }
-
   function onFilesSelected(setter) {
     return (e) => {
       const files = Array.from(e.target.files || []);
       e.target.value = "";
       if (!files.length) return;
 
-      setter((prev) => {
-        const next = [...prev];
-        for (const f of files) {
-          if (!f.type?.startsWith("image/")) continue;
-          next.push({ file: f, url: URL.createObjectURL(f) });
-        }
-        return next;
-      });
+      setter((prev) => [
+        ...prev,
+        ...files
+          .filter((f) => f.type?.startsWith("image/"))
+          .map((f) => ({ file: f, url: URL.createObjectURL(f) })),
+      ]);
     };
   }
-
   function removePhoto(setter) {
     return (idx) => {
       setter((prev) => {
@@ -291,7 +360,6 @@ export default function Stock() {
     });
   }, [shipments, q]);
 
-  // open/close modals
   function openCreate() {
     setErr("");
     setCreateForm({
@@ -310,7 +378,6 @@ export default function Stock() {
     });
     setCreateOpen(true);
   }
-
   function closeCreate() {
     setCreateOpen(false);
     setCreatePhotos((prev) => {
@@ -336,7 +403,6 @@ export default function Stock() {
     });
     setEditOpen(true);
   }
-
   function closeEdit() {
     setEditOpen(false);
     setActiveItem(null);
@@ -362,7 +428,6 @@ export default function Stock() {
     });
     setShipOpen(true);
   }
-
   function closeShip() {
     setShipOpen(false);
     setShipItem(null);
@@ -372,7 +437,6 @@ export default function Stock() {
     });
   }
 
-  // actions
   async function onCreateSubmit(e) {
     e.preventDefault();
     setErr("");
@@ -472,7 +536,9 @@ export default function Stock() {
     const phone = shipForm.phone.trim();
     const city = shipForm.city.trim();
     const branch = shipForm.branch.trim();
-    if (!full_name || !phone || !city || !branch) return setErr("Заповни ПІБ, телефон, місто і відділення");
+    if (!full_name || !phone || !city || !branch) {
+      return setErr("Заповни ПІБ, телефон, місто і відділення");
+    }
 
     setBusyShip(true);
     try {
@@ -503,10 +569,7 @@ export default function Stock() {
         const meta = row?.meta ?? {};
         const nextMeta = { ...meta, photo_paths: uploaded };
 
-        const { error: e2 } = await db
-          .from("item_events")
-          .update({ meta: nextMeta })
-          .eq("id", eventId);
+        const { error: e2 } = await db.from("item_events").update({ meta: nextMeta }).eq("id", eventId);
         if (e2) throw e2;
       }
 
@@ -534,12 +597,13 @@ export default function Stock() {
         />
 
         {tab === "stock" ? (
-          <>
-            <button className="btn" onClick={openCreate} type="button">+ Додати товар</button>
-            <button className="btnSecondary" onClick={loadStock} type="button">Оновити</button>
-          </>
+          <button className="btnSecondary" onClick={loadStock} type="button">
+            Оновити
+          </button>
         ) : (
-          <button className="btnSecondary" onClick={loadShipments} type="button">Оновити</button>
+          <button className="btnSecondary" onClick={loadShipments} type="button">
+            Оновити
+          </button>
         )}
       </div>
 
@@ -547,48 +611,24 @@ export default function Stock() {
       {loading ? <p style={{ marginTop: 10 }}>Завантаження...</p> : null}
 
       {tab === "stock" ? (
-        <div className="stockGrid">
-          {filteredItems.map((x) => {
-            const urls = (x.photo_paths ?? [])
-              .map((p) => normalizeItemPhotoPath(x.id, p))
-              .filter(Boolean)
-              .map(getPublicPhotoUrl);
+        <>
+          <div className="premiumGrid">
+            {filteredItems.map((x) => (
+              <ProductCard
+                key={x.id}
+                item={x}
+                onOpen={() => openEdit(x)}
+                onShip={() => openShip(x)}
+              />
+            ))}
+          </div>
 
-            return (
-              <div className="stockCard" key={x.id}>
-                <PhotoStrip urls={urls} />
-
-                <div className="stockCardBody">
-                  <div className="stockCardTitleRow">
-                    <div className="stockCardTitle">{x.title}</div>
-                    <div className="stockCardPrice">₴ {x.sale_price}</div>
-                  </div>
-
-                  <div className="stockCardMeta">
-                    <span>Розмір: {x.size ?? "-"}</span>
-                    {x.sku ? <span>SKU: {x.sku}</span> : null}
-                  </div>
-
-                  <div className="stockCardStats">
-                    <div><span>В наявності</span><b>{x.qty_in_stock}</b></div>
-                    <div><span>В доставці</span><b>{x.qty_in_delivery}</b></div>
-                    <div><span>Отримано</span><b>{x.qty_delivered_total}</b></div>
-                    <div><span>Повернено</span><b>{x.qty_returned_total}</b></div>
-                  </div>
-
-                  <div className="stockCardActions">
-                    <button className="btnSecondary" type="button" onClick={() => openEdit(x)}>
-                      Відкрити
-                    </button>
-                    <button className="btn" type="button" onClick={() => openShip(x)}>
-                      Відправити
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+          {/* ДОДАТИ — вниз по центру */}
+          <button className="fabAdd" type="button" onClick={openCreate} aria-label="Add item">
+            + Додати
+          </button>
+          <div style={{ height: 84 }} />
+        </>
       ) : null}
 
       {tab === "ship" ? (
@@ -639,17 +679,7 @@ export default function Stock() {
         type="file"
         accept="image/*"
         multiple
-        onChange={(e) => {
-          const files = Array.from(e.target.files || []);
-          e.target.value = "";
-          if (!files.length) return;
-          setCreatePhotos((prev) => [
-            ...prev,
-            ...files
-              .filter((f) => f.type?.startsWith("image/"))
-              .map((f) => ({ file: f, url: URL.createObjectURL(f) })),
-          ]);
-        }}
+        onChange={onFilesSelected(setCreatePhotos)}
         style={{ display: "none" }}
       />
       <input
@@ -674,7 +704,7 @@ export default function Stock() {
         <div className="modalHeader">
           <div>
             <div className="modalTitle">Додати товар</div>
-            <div className="modalSubtitle">Спочатку фото, потім дані</div>
+            <div className="modalSubtitle">Фото → дані → створити</div>
           </div>
           <button className="iconBtn" onClick={closeCreate} type="button">✕</button>
         </div>
@@ -682,7 +712,7 @@ export default function Stock() {
         <div className="modalBody">
           <AddPhotoCarousel
             photos={createPhotos}
-            onAdd={pickCreatePhotos}
+            onAdd={() => createInputRef.current?.click()}
             onRemove={removePhoto(setCreatePhotos)}
           />
 
@@ -717,11 +747,12 @@ export default function Stock() {
             </div>
 
             <label>
-              Нотатка
+              Тег (короткий) / Нотатка
               <input
                 className="input"
                 value={createForm.note}
                 onChange={(e) => setCreateForm({ ...createForm, note: e.target.value })}
+                placeholder="Напр. Одяг"
               />
             </label>
 
@@ -811,7 +842,7 @@ export default function Stock() {
                     </div>
                   )}
 
-                  <button type="button" className="photoAddSmall" onClick={pickEditPhotos}>
+                  <button type="button" className="photoAddSmall" onClick={() => editInputRef.current?.click()}>
                     <div className="photoPlus">＋</div>
                     <div className="photoAddText">Додати</div>
                   </button>
@@ -821,7 +852,7 @@ export default function Stock() {
               {editNewPhotos.length ? (
                 <AddPhotoCarousel
                   photos={editNewPhotos}
-                  onAdd={pickEditPhotos}
+                  onAdd={() => editInputRef.current?.click()}
                   onRemove={removePhoto(setEditNewPhotos)}
                 />
               ) : null}
@@ -857,7 +888,7 @@ export default function Stock() {
                 </div>
 
                 <label>
-                  Нотатка
+                  Тег/Нотатка
                   <input
                     className="input"
                     value={editForm.note}
@@ -925,7 +956,7 @@ export default function Stock() {
             <>
               <AddPhotoCarousel
                 photos={shipPhotos}
-                onAdd={pickShipPhotos}
+                onAdd={() => shipInputRef.current?.click()}
                 onRemove={removePhoto(setShipPhotos)}
               />
 
