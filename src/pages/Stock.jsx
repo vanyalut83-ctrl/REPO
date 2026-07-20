@@ -16,19 +16,14 @@ function toInt(v) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function PhotoCarousel({
-  photos,
-  onAdd,
-  onRemove,
-  emptyText = "Додати фото",
-}) {
+function PhotoCarousel({ photos, onAdd, onRemove }) {
   return (
     <div className="photoBox">
       <div className="photoRow">
         {photos.length === 0 ? (
           <button type="button" className="photoAddBig" onClick={onAdd}>
             <div className="photoPlus">＋</div>
-            <div className="photoAddText">{emptyText}</div>
+            <div className="photoAddText">Додати фото</div>
             <div className="photoSubText">
               iPhone/Android запропонує варіанти (камера/фото/файли)
             </div>
@@ -50,7 +45,6 @@ function PhotoCarousel({
               </div>
             ))}
 
-            {/* Плитка "Додати" після останнього фото */}
             <button type="button" className="photoAddSmall" onClick={onAdd}>
               <div className="photoPlus">＋</div>
               <div className="photoAddText">Додати</div>
@@ -67,6 +61,7 @@ function PreviewCard({ preview }) {
     <div className="previewCard">
       <div className="previewTop">
         <div className="previewTitle">{preview.title}</div>
+
         <div className="previewMeta">
           <span>Розмір: {preview.size}</span>
           {preview.sku ? <span>SKU: {preview.sku}</span> : null}
@@ -133,7 +128,7 @@ export default function Stock() {
     qty_in_delivery: "0",
   });
 
-  // Фото: [{file, url}]
+  // photos: [{file, url}]
   const [photos, setPhotos] = useState([]);
   const fileInputRef = useRef(null);
 
@@ -142,7 +137,7 @@ export default function Stock() {
     setErr("");
     try {
       const data = await listItems();
-      setItems(data);
+      setItems(data ?? []);
     } catch (e) {
       setErr(e?.message ?? "Помилка завантаження");
     } finally {
@@ -154,14 +149,24 @@ export default function Stock() {
     load();
   }, []);
 
-  // close modal by Esc
   useEffect(() => {
     function onKeyDown(e) {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") closeCreate();
     }
     if (open) window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  function revokeAllPreviews(prev) {
+    for (const p of prev) {
+      try {
+        URL.revokeObjectURL(p.url);
+      } catch {
+        // ignore
+      }
+    }
+  }
 
   function resetCreateState() {
     setForm({
@@ -174,9 +179,8 @@ export default function Stock() {
       qty_in_stock: "0",
       qty_in_delivery: "0",
     });
-
     setPhotos((prev) => {
-      for (const p of prev) URL.revokeObjectURL(p.url);
+      revokeAllPreviews(prev);
       return [];
     });
   }
@@ -189,9 +193,11 @@ export default function Stock() {
 
   function closeCreate() {
     setOpen(false);
+    // щоб не лишались objectURL
+    resetCreateState();
   }
 
-  // ВАЖЛИВО: один input accept=image/* -> iOS/Android покаже системний chooser (як OLX)
+  // Один input accept=image/* => системний chooser як OLX (камера/фото/файли)
   function pickPhotos() {
     fileInputRef.current?.click();
   }
@@ -215,7 +221,13 @@ export default function Stock() {
     setPhotos((prev) => {
       const copy = [...prev];
       const item = copy[idx];
-      if (item) URL.revokeObjectURL(item.url);
+      if (item) {
+        try {
+          URL.revokeObjectURL(item.url);
+        } catch {
+          // ignore
+        }
+      }
       copy.splice(idx, 1);
       return copy;
     });
@@ -272,13 +284,12 @@ export default function Stock() {
     try {
       const created = await createItem(payload);
 
-      // upload photos
       for (const p of photos) {
         const path = await uploadItemPhoto({ itemId: created.id, file: p.file });
         await appendItemPhotoPath(created.id, path);
       }
 
-      closeCreate();
+      setOpen(false);
       resetCreateState();
       await load();
     } catch (e2) {
@@ -358,7 +369,7 @@ export default function Stock() {
                   <div style={{ minWidth: 0 }}>
                     <div
                       style={{
-                        fontWeight: 800,
+                        fontWeight: 900,
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
@@ -371,6 +382,7 @@ export default function Stock() {
                     </div>
                   </div>
                 </td>
+
                 <td>{x.size ?? "-"}</td>
                 <td>{x.cost}</td>
                 <td>{x.sale_price}</td>
@@ -417,17 +429,19 @@ export default function Stock() {
               )}
 
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2 }}>
+                <div style={{ fontWeight: 950, fontSize: 16, lineHeight: 1.2 }}>
                   {x.title}
                 </div>
                 <div style={{ color: "var(--muted)", marginTop: 4 }}>
                   Розмір: {x.size ?? "-"}
                 </div>
-                {x.sku ? <div style={{ color: "var(--muted)" }}>SKU: {x.sku}</div> : null}
+                {x.sku ? (
+                  <div style={{ color: "var(--muted)" }}>SKU: {x.sku}</div>
+                ) : null}
               </div>
 
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontWeight: 900 }}>₴ {x.sale_price}</div>
+                <div style={{ fontWeight: 950 }}>₴ {x.sale_price}</div>
                 <div style={{ color: "var(--muted)" }}>собів. ₴ {x.cost}</div>
               </div>
             </div>
@@ -454,7 +468,7 @@ export default function Stock() {
         ))}
       </div>
 
-      {/* Hidden chooser */}
+      {/* Hidden file chooser (OLX-like) */}
       <input
         ref={fileInputRef}
         type="file"
@@ -471,131 +485,134 @@ export default function Stock() {
             <div className="modalHeader">
               <div>
                 <div className="modalTitle">Новий товар</div>
-                <div className="modalSubtitle">
-                  Спочатку додай фото (за бажанням), потім заповни дані — превʼю оновлюється одразу.
-                </div>
+                <div className="modalSubtitle">Фото → дані → створити</div>
               </div>
 
-              <button className="iconBtn" onClick={closeCreate} type="button" aria-label="Close">
+              <button
+                className="iconBtn"
+                onClick={closeCreate}
+                type="button"
+                aria-label="Close"
+              >
                 ✕
               </button>
             </div>
 
-            {/* TOP PHOTO BLOCK (OLX-like) */}
-            <PhotoCarousel photos={photos} onAdd={pickPhotos} onRemove={removePhoto} />
+            <div className="modalBody">
+              <PhotoCarousel photos={photos} onAdd={pickPhotos} onRemove={removePhoto} />
 
-            {/* PREVIEW */}
-            <PreviewCard preview={preview} />
+              <PreviewCard preview={preview} />
 
-            {/* FORM */}
-            <form onSubmit={onCreate} className="form">
-              <label>
-                Назва
-                <input
-                  className="input"
-                  value={form.title}
-                  onChange={(e) => setForm({ ...form, title: e.target.value })}
-                />
-              </label>
-
-              <div className="row2">
+              <form id="createItemForm" onSubmit={onCreate} className="form">
                 <label>
-                  Розмір (text)
+                  Назва
                   <input
                     className="input"
-                    value={form.size}
-                    onChange={(e) => setForm({ ...form, size: e.target.value })}
+                    value={form.title}
+                    onChange={(e) => setForm({ ...form, title: e.target.value })}
+                    placeholder="Напр. Футболка Nike"
                   />
                 </label>
 
-                <label>
-                  SKU (опц.)
-                  <input
-                    className="input"
-                    value={form.sku}
-                    onChange={(e) => setForm({ ...form, sku: e.target.value })}
-                  />
-                </label>
-              </div>
+                <div className="row2">
+                  <label>
+                    Розмір
+                    <input
+                      className="input"
+                      value={form.size}
+                      onChange={(e) => setForm({ ...form, size: e.target.value })}
+                      placeholder="S / M / L / 42..."
+                    />
+                  </label>
 
-              <label>
-                Нотатка (опц.)
-                <input
-                  className="input"
-                  value={form.note}
-                  onChange={(e) => setForm({ ...form, note: e.target.value })}
-                />
-              </label>
-
-              <div className="row2">
-                <label>
-                  Собівартість (за 1 шт)
-                  <input
-                    className="input"
-                    inputMode="decimal"
-                    value={form.cost}
-                    onChange={(e) => setForm({ ...form, cost: e.target.value })}
-                  />
-                </label>
+                  <label>
+                    SKU (опц.)
+                    <input
+                      className="input"
+                      value={form.sku}
+                      onChange={(e) => setForm({ ...form, sku: e.target.value })}
+                      placeholder="Код/артикул"
+                    />
+                  </label>
+                </div>
 
                 <label>
-                  Ціна продажу (за 1 шт)
+                  Нотатка (опц.)
                   <input
                     className="input"
-                    inputMode="decimal"
-                    value={form.sale_price}
-                    onChange={(e) => setForm({ ...form, sale_price: e.target.value })}
-                  />
-                </label>
-              </div>
-
-              <div className="row2">
-                <label>
-                  В наявності (шт)
-                  <input
-                    className="input"
-                    inputMode="numeric"
-                    value={form.qty_in_stock}
-                    onChange={(e) => setForm({ ...form, qty_in_stock: e.target.value })}
+                    value={form.note}
+                    onChange={(e) => setForm({ ...form, note: e.target.value })}
+                    placeholder="Колір/постачальник/коментар"
                   />
                 </label>
 
-                <label>
-                  В доставці (шт)
-                  <input
-                    className="input"
-                    inputMode="numeric"
-                    value={form.qty_in_delivery}
-                    onChange={(e) => setForm({ ...form, qty_in_delivery: e.target.value })}
-                  />
-                </label>
-              </div>
+                <div className="row2">
+                  <label>
+                    Собівартість (₴/шт)
+                    <input
+                      className="input"
+                      inputMode="decimal"
+                      value={form.cost}
+                      onChange={(e) => setForm({ ...form, cost: e.target.value })}
+                    />
+                  </label>
 
-              <div className="modalActions">
-                <button className="btnSecondary" type="button" onClick={closeCreate} disabled={busyCreate}>
-                  Скасувати
-                </button>
-                <button className="btn" type="submit" disabled={busyCreate}>
-                  {busyCreate ? "Зберігаю..." : "Створити"}
-                </button>
-              </div>
+                  <label>
+                    Ціна продажу (₴/шт)
+                    <input
+                      className="input"
+                      inputMode="decimal"
+                      value={form.sale_price}
+                      onChange={(e) => setForm({ ...form, sale_price: e.target.value })}
+                    />
+                  </label>
+                </div>
 
-              <div className="hint">
-                Якщо бачиш помилку про відсутню колонку (наприклад <code>qty_in_stock</code>) — значить в Supabase таблиці
-                інші назви полів. Тоді або перейменуємо колонки, або адаптуємо код під твою схему.
-              </div>
-            </form>
+                <div className="row2">
+                  <label>
+                    В наявності (шт)
+                    <input
+                      className="input"
+                      inputMode="numeric"
+                      value={form.qty_in_stock}
+                      onChange={(e) => setForm({ ...form, qty_in_stock: e.target.value })}
+                    />
+                  </label>
+
+                  <label>
+                    В доставці (шт)
+                    <input
+                      className="input"
+                      inputMode="numeric"
+                      value={form.qty_in_delivery}
+                      onChange={(e) => setForm({ ...form, qty_in_delivery: e.target.value })}
+                    />
+                  </label>
+                </div>
+              </form>
+            </div>
+
+            <div className="modalFooter">
+              <button
+                className="btnSecondary"
+                type="button"
+                onClick={closeCreate}
+                disabled={busyCreate}
+              >
+                Скасувати
+              </button>
+              <button
+                className="btn"
+                form="createItemForm"
+                type="submit"
+                disabled={busyCreate}
+              >
+                {busyCreate ? "Зберігаю..." : "Створити"}
+              </button>
+            </div>
           </div>
         </div>
       ) : null}
     </section>
   );
 }
-
-/*
-Потрібні CSS-класи (додай в index.css якщо ще нема):
-- stockTop, errorBox
-- photoBox, photoRow, photoSlide, photoImg, photoAddBig, photoAddSmall, photoPlus, photoAddText, photoSubText, photoRemove
-- previewCard, previewTop, previewTitle, previewMeta, previewPriceRow, pill, previewGrid, previewNote
-- modal modern: modalHeader, modalTitle, modalSubtitle, modalActions, hint
-*/
