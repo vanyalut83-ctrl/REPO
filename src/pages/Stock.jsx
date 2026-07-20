@@ -24,6 +24,14 @@ function extFromName(name = "") {
   return (p.length > 1 ? p.pop() : "jpg").toLowerCase();
 }
 
+// якщо в БД лежить тільки "filename.jpg" або "uuid", а файл в bucket як "itemId/filename.jpg"
+function normalizeItemPhotoPath(itemId, p) {
+  if (!p) return null;
+  const s = String(p);
+  if (s.includes("/")) return s; // вже нормальний шлях
+  return `${itemId}/${s}`; // підставимо itemId/
+}
+
 function Modal({ open, onClose, children }) {
   if (!open) return null;
   return (
@@ -36,7 +44,6 @@ function Modal({ open, onClose, children }) {
 }
 
 function PhotoStrip({ urls = [] }) {
-  // великий блок фото, “від краю до краю” картки, свайп/гортання
   return (
     <div className="cardMedia">
       <div className="cardMediaRow">
@@ -55,7 +62,6 @@ function PhotoStrip({ urls = [] }) {
 }
 
 function AddPhotoCarousel({ photos, onAdd, onRemove }) {
-  // для модалок: додаємо фото, є плитка +Додати після останнього
   return (
     <div className="photoBox">
       <div className="photoRow">
@@ -171,9 +177,7 @@ export default function Stock() {
     for (const p of arr) {
       try {
         URL.revokeObjectURL(p.url);
-      } catch {
-        // ignore
-      }
+      } catch {}
     }
   }
 
@@ -195,9 +199,7 @@ export default function Stock() {
     try {
       const { data, error } = await db
         .from("item_events")
-        .select(
-          "id, type, qty, created_at, meta, items(id, title, size, sku, photo_paths)"
-        )
+        .select("id, type, qty, created_at, meta, items(id, title, size, sku, photo_paths)")
         .eq("type", "ship")
         .order("created_at", { ascending: false })
         .limit(200);
@@ -229,7 +231,7 @@ export default function Stock() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // ---------- picker helpers (system chooser like OLX) ----------
+  // chooser helpers
   function pickCreatePhotos() {
     createInputRef.current?.click();
   }
@@ -269,7 +271,6 @@ export default function Stock() {
     };
   }
 
-  // ---------- filters ----------
   const filteredItems = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return items;
@@ -290,7 +291,7 @@ export default function Stock() {
     });
   }, [shipments, q]);
 
-  // ---------- open/close modals ----------
+  // open/close modals
   function openCreate() {
     setErr("");
     setCreateForm({
@@ -371,7 +372,7 @@ export default function Stock() {
     });
   }
 
-  // ---------- actions ----------
+  // actions
   async function onCreateSubmit(e) {
     e.preventDefault();
     setErr("");
@@ -433,7 +434,6 @@ export default function Stock() {
       const { error } = await db.from("items").update(patch).eq("id", activeItem.id);
       if (error) throw error;
 
-      // add new photos (append)
       for (const p of editNewPhotos) {
         const path = await uploadItemPhoto({ itemId: activeItem.id, file: p.file });
         await appendItemPhotoPath(activeItem.id, path);
@@ -449,7 +449,6 @@ export default function Stock() {
   }
 
   async function uploadShipmentPhoto(eventId, file) {
-    // використовуємо той самий bucket (item-photos)
     const path = `shipments/${eventId}/${uid()}.${extFromName(file.name)}`;
     const { error } = await db.storage.from("item-photos").upload(path, file, {
       cacheControl: "3600",
@@ -473,14 +472,10 @@ export default function Stock() {
     const phone = shipForm.phone.trim();
     const city = shipForm.city.trim();
     const branch = shipForm.branch.trim();
-
-    if (!full_name || !phone || !city || !branch) {
-      return setErr("Заповни ПІБ, телефон, місто і відділення");
-    }
+    if (!full_name || !phone || !city || !branch) return setErr("Заповни ПІБ, телефон, місто і відділення");
 
     setBusyShip(true);
     try {
-      // 1) атомарно: -stock, +delivery, +event(ship)
       const { data: eventId, error: rpcErr } = await db.rpc("ship_item", {
         p_item_id: shipItem.id,
         p_qty: qty,
@@ -491,14 +486,12 @@ export default function Stock() {
       });
       if (rpcErr) throw rpcErr;
 
-      // 2) upload фото до відправлення (не атомарно, але практично)
       const uploaded = [];
       for (const p of shipPhotos) {
         const path = await uploadShipmentPhoto(eventId, p.file);
         uploaded.push(path);
       }
 
-      // 3) дописати photo_paths в meta
       if (uploaded.length) {
         const { data: row, error: e1 } = await db
           .from("item_events")
@@ -527,7 +520,6 @@ export default function Stock() {
     }
   }
 
-  // ---------- UI ----------
   return (
     <section>
       <div className="stockTop">
@@ -543,28 +535,25 @@ export default function Stock() {
 
         {tab === "stock" ? (
           <>
-            <button className="btn" onClick={openCreate} type="button">
-              + Додати товар
-            </button>
-            <button className="btnSecondary" onClick={loadStock} type="button">
-              Оновити
-            </button>
+            <button className="btn" onClick={openCreate} type="button">+ Додати товар</button>
+            <button className="btnSecondary" onClick={loadStock} type="button">Оновити</button>
           </>
         ) : (
-          <button className="btnSecondary" onClick={loadShipments} type="button">
-            Оновити
-          </button>
+          <button className="btnSecondary" onClick={loadShipments} type="button">Оновити</button>
         )}
       </div>
 
       {err ? <div className="errorBox">{err}</div> : null}
       {loading ? <p style={{ marginTop: 10 }}>Завантаження...</p> : null}
 
-      {/* ---------- STOCK TAB ---------- */}
       {tab === "stock" ? (
         <div className="stockGrid">
           {filteredItems.map((x) => {
-            const urls = (x.photo_paths ?? []).slice(0, 10).map(getPublicPhotoUrl);
+            const urls = (x.photo_paths ?? [])
+              .map((p) => normalizeItemPhotoPath(x.id, p))
+              .filter(Boolean)
+              .map(getPublicPhotoUrl);
+
             return (
               <div className="stockCard" key={x.id}>
                 <PhotoStrip urls={urls} />
@@ -581,22 +570,10 @@ export default function Stock() {
                   </div>
 
                   <div className="stockCardStats">
-                    <div>
-                      <span>В наявності</span>
-                      <b>{x.qty_in_stock}</b>
-                    </div>
-                    <div>
-                      <span>В доставці</span>
-                      <b>{x.qty_in_delivery}</b>
-                    </div>
-                    <div>
-                      <span>Отримано</span>
-                      <b>{x.qty_delivered_total}</b>
-                    </div>
-                    <div>
-                      <span>Повернено</span>
-                      <b>{x.qty_returned_total}</b>
-                    </div>
+                    <div><span>В наявності</span><b>{x.qty_in_stock}</b></div>
+                    <div><span>В доставці</span><b>{x.qty_in_delivery}</b></div>
+                    <div><span>Отримано</span><b>{x.qty_delivered_total}</b></div>
+                    <div><span>Повернено</span><b>{x.qty_returned_total}</b></div>
                   </div>
 
                   <div className="stockCardActions">
@@ -614,7 +591,6 @@ export default function Stock() {
         </div>
       ) : null}
 
-      {/* ---------- SHIP TAB ---------- */}
       {tab === "ship" ? (
         <div className="shipGrid">
           {filteredShipments.map((ev) => {
@@ -650,9 +626,7 @@ export default function Stock() {
                   </div>
                 ) : null}
 
-                <div className="shipTime">
-                  {new Date(ev.created_at).toLocaleString()}
-                </div>
+                <div className="shipTime">{new Date(ev.created_at).toLocaleString()}</div>
               </div>
             );
           })}
@@ -665,7 +639,17 @@ export default function Stock() {
         type="file"
         accept="image/*"
         multiple
-        onChange={onFilesSelected(setCreatePhotos)}
+        onChange={(e) => {
+          const files = Array.from(e.target.files || []);
+          e.target.value = "";
+          if (!files.length) return;
+          setCreatePhotos((prev) => [
+            ...prev,
+            ...files
+              .filter((f) => f.type?.startsWith("image/"))
+              .map((f) => ({ file: f, url: URL.createObjectURL(f) })),
+          ]);
+        }}
         style={{ display: "none" }}
       />
       <input
@@ -685,16 +669,14 @@ export default function Stock() {
         style={{ display: "none" }}
       />
 
-      {/* ---------- CREATE MODAL ---------- */}
+      {/* CREATE MODAL */}
       <Modal open={createOpen} onClose={closeCreate}>
         <div className="modalHeader">
           <div>
             <div className="modalTitle">Додати товар</div>
             <div className="modalSubtitle">Спочатку фото, потім дані</div>
           </div>
-          <button className="iconBtn" onClick={closeCreate} type="button">
-            ✕
-          </button>
+          <button className="iconBtn" onClick={closeCreate} type="button">✕</button>
         </div>
 
         <div className="modalBody">
@@ -711,7 +693,6 @@ export default function Stock() {
                 className="input"
                 value={createForm.title}
                 onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })}
-                placeholder="Напр. Футболка Nike"
               />
             </label>
 
@@ -722,34 +703,31 @@ export default function Stock() {
                   className="input"
                   value={createForm.size}
                   onChange={(e) => setCreateForm({ ...createForm, size: e.target.value })}
-                  placeholder="S / M / L / 42..."
                 />
               </label>
 
               <label>
-                SKU (опц.)
+                SKU
                 <input
                   className="input"
                   value={createForm.sku}
                   onChange={(e) => setCreateForm({ ...createForm, sku: e.target.value })}
-                  placeholder="Код/артикул"
                 />
               </label>
             </div>
 
             <label>
-              Нотатка (опц.)
+              Нотатка
               <input
                 className="input"
                 value={createForm.note}
                 onChange={(e) => setCreateForm({ ...createForm, note: e.target.value })}
-                placeholder="Колір/постачальник/коментар"
               />
             </label>
 
             <div className="row2">
               <label>
-                Собівартість (₴/шт)
+                Собівартість
                 <input
                   className="input"
                   inputMode="decimal"
@@ -759,40 +737,34 @@ export default function Stock() {
               </label>
 
               <label>
-                Ціна продажу (₴/шт)
+                Ціна продажу
                 <input
                   className="input"
                   inputMode="decimal"
                   value={createForm.sale_price}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, sale_price: e.target.value })
-                  }
+                  onChange={(e) => setCreateForm({ ...createForm, sale_price: e.target.value })}
                 />
               </label>
             </div>
 
             <div className="row2">
               <label>
-                В наявності (шт)
+                В наявності
                 <input
                   className="input"
                   inputMode="numeric"
                   value={createForm.qty_in_stock}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, qty_in_stock: e.target.value })
-                  }
+                  onChange={(e) => setCreateForm({ ...createForm, qty_in_stock: e.target.value })}
                 />
               </label>
 
               <label>
-                В доставці (шт)
+                В доставці
                 <input
                   className="input"
                   inputMode="numeric"
                   value={createForm.qty_in_delivery}
-                  onChange={(e) =>
-                    setCreateForm({ ...createForm, qty_in_delivery: e.target.value })
-                  }
+                  onChange={(e) => setCreateForm({ ...createForm, qty_in_delivery: e.target.value })}
                 />
               </label>
             </div>
@@ -809,37 +781,36 @@ export default function Stock() {
         </div>
       </Modal>
 
-      {/* ---------- EDIT MODAL ---------- */}
+      {/* EDIT MODAL */}
       <Modal open={editOpen} onClose={closeEdit}>
         <div className="modalHeader">
           <div>
             <div className="modalTitle">Картка товару</div>
-            <div className="modalSubtitle">Редагування даних та фото</div>
+            <div className="modalSubtitle">Редагування</div>
           </div>
-          <button className="iconBtn" onClick={closeEdit} type="button">
-            ✕
-          </button>
+          <button className="iconBtn" onClick={closeEdit} type="button">✕</button>
         </div>
 
         <div className="modalBody">
           {activeItem ? (
             <>
-              {/* існуючі фото */}
               <div className="photoBox" style={{ marginBottom: 10 }}>
                 <div className="photoRow">
                   {(activeItem.photo_paths ?? []).length ? (
-                    (activeItem.photo_paths ?? []).map((p) => (
-                      <div className="photoSlide" key={p}>
-                        <img className="photoImg" src={getPublicPhotoUrl(p)} alt="" />
-                      </div>
-                    ))
+                    (activeItem.photo_paths ?? []).map((p) => {
+                      const norm = normalizeItemPhotoPath(activeItem.id, p);
+                      return (
+                        <div className="photoSlide" key={p}>
+                          <img className="photoImg" src={getPublicPhotoUrl(norm)} alt="" />
+                        </div>
+                      );
+                    })
                   ) : (
                     <div className="photoAddBig" style={{ width: "100%" }}>
                       <div className="photoSubText">Нема фото</div>
                     </div>
                   )}
 
-                  {/* додати ще */}
                   <button type="button" className="photoAddSmall" onClick={pickEditPhotos}>
                     <div className="photoPlus">＋</div>
                     <div className="photoAddText">Додати</div>
@@ -847,7 +818,6 @@ export default function Stock() {
                 </div>
               </div>
 
-              {/* нові фото (ще не завантажені) */}
               {editNewPhotos.length ? (
                 <AddPhotoCarousel
                   photos={editNewPhotos}
@@ -855,13 +825,6 @@ export default function Stock() {
                   onRemove={removePhoto(setEditNewPhotos)}
                 />
               ) : null}
-
-              <div className="stockCardStats" style={{ marginTop: 10 }}>
-                <div><span>В наявності</span><b>{activeItem.qty_in_stock}</b></div>
-                <div><span>В доставці</span><b>{activeItem.qty_in_delivery}</b></div>
-                <div><span>Отримано</span><b>{activeItem.qty_delivered_total}</b></div>
-                <div><span>Повернено</span><b>{activeItem.qty_returned_total}</b></div>
-              </div>
 
               <form className="form" id="editForm" onSubmit={(e) => e.preventDefault()}>
                 <label>
@@ -904,7 +867,7 @@ export default function Stock() {
 
                 <div className="row2">
                   <label>
-                    Собівартість (₴/шт)
+                    Собівартість
                     <input
                       className="input"
                       inputMode="decimal"
@@ -914,14 +877,12 @@ export default function Stock() {
                   </label>
 
                   <label>
-                    Ціна продажу (₴/шт)
+                    Ціна продажу
                     <input
                       className="input"
                       inputMode="decimal"
                       value={editForm.sale_price}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, sale_price: e.target.value })
-                      }
+                      onChange={(e) => setEditForm({ ...editForm, sale_price: e.target.value })}
                     />
                   </label>
                 </div>
@@ -947,34 +908,21 @@ export default function Stock() {
         </div>
       </Modal>
 
-      {/* ---------- SHIP MODAL ---------- */}
+      {/* SHIP MODAL */}
       <Modal open={shipOpen} onClose={closeShip}>
         <div className="modalHeader">
           <div>
             <div className="modalTitle">Відправити</div>
             <div className="modalSubtitle">
-              {shipItem ? `${shipItem.title} ${shipItem.size ? `• ${shipItem.size}` : ""}` : ""}
+              {shipItem ? `${shipItem.title}${shipItem.size ? ` • ${shipItem.size}` : ""}` : ""}
             </div>
           </div>
-          <button className="iconBtn" onClick={closeShip} type="button">
-            ✕
-          </button>
+          <button className="iconBtn" onClick={closeShip} type="button">✕</button>
         </div>
 
         <div className="modalBody">
           {shipItem ? (
             <>
-              <div className="shipInfoRow">
-                <div className="shipInfoPill">
-                  <span>В наявності</span>
-                  <b>{shipItem.qty_in_stock}</b>
-                </div>
-                <div className="shipInfoPill">
-                  <span>В доставці</span>
-                  <b>{shipItem.qty_in_delivery}</b>
-                </div>
-              </div>
-
               <AddPhotoCarousel
                 photos={shipPhotos}
                 onAdd={pickShipPhotos}
@@ -989,18 +937,16 @@ export default function Stock() {
                       className="input"
                       value={shipForm.full_name}
                       onChange={(e) => setShipForm({ ...shipForm, full_name: e.target.value })}
-                      placeholder="Прізвище Ім'я"
                     />
                   </label>
 
                   <label>
-                    Номер телефону
+                    Телефон
                     <input
                       className="input"
                       inputMode="tel"
                       value={shipForm.phone}
                       onChange={(e) => setShipForm({ ...shipForm, phone: e.target.value })}
-                      placeholder="+380..."
                     />
                   </label>
                 </div>
@@ -1012,7 +958,6 @@ export default function Stock() {
                       className="input"
                       value={shipForm.city}
                       onChange={(e) => setShipForm({ ...shipForm, city: e.target.value })}
-                      placeholder="Київ"
                     />
                   </label>
 
@@ -1022,7 +967,6 @@ export default function Stock() {
                       className="input"
                       value={shipForm.branch}
                       onChange={(e) => setShipForm({ ...shipForm, branch: e.target.value })}
-                      placeholder="Напр. 12"
                     />
                   </label>
                 </div>
