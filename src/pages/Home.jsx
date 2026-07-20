@@ -1,3 +1,4 @@
+// src/pages/Home.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../services/supabase";
 import { getPublicPhotoUrl } from "../services/photos";
@@ -7,6 +8,18 @@ function normalizeItemPhotoPath(itemId, p) {
   const s = String(p);
   if (s.includes("/")) return s;
   return `${itemId}/${s}`;
+}
+
+function uniq(arr) {
+  const seen = new Set();
+  const out = [];
+  for (const x of arr) {
+    if (!x) continue;
+    if (seen.has(x)) continue;
+    seen.add(x);
+    out.push(x);
+  }
+  return out;
 }
 
 function IconTruck({ size = 18 }) {
@@ -53,8 +66,7 @@ function PhotoViewer({ open, urls, startIndex, onClose }) {
     const el = rowRef.current;
     if (!el) return;
     const w = el.clientWidth || 1;
-    const next = Math.round(el.scrollLeft / w);
-    setIdx(next);
+    setIdx(Math.round(el.scrollLeft / w));
   }
 
   if (!open) return null;
@@ -65,10 +77,17 @@ function PhotoViewer({ open, urls, startIndex, onClose }) {
         <div className="viewerCount">
           {urls?.length ? `${idx + 1} / ${urls.length}` : ""}
         </div>
-        <button className="viewerClose" type="button" onClick={onClose}>Закрити</button>
+        <button className="viewerClose" type="button" onClick={onClose}>
+          Закрити
+        </button>
       </div>
 
-      <div className="viewerRow" ref={rowRef} onScroll={onScroll} onClick={(e) => e.stopPropagation()}>
+      <div
+        className="viewerRow"
+        ref={rowRef}
+        onScroll={onScroll}
+        onClick={(e) => e.stopPropagation()}
+      >
         {urls.map((u) => (
           <div className="viewerSlide" key={u}>
             <img className="viewerImg" src={u} alt="" />
@@ -81,7 +100,12 @@ function PhotoViewer({ open, urls, startIndex, onClose }) {
 
 function PhotoBoxSquare({ urls, onOpenViewer }) {
   return (
-    <div className="pMedia" role="button" onClick={onOpenViewer} style={{ cursor: urls?.length ? "pointer" : "default" }}>
+    <div
+      className="pMedia"
+      role="button"
+      onClick={urls?.length ? onOpenViewer : undefined}
+      style={{ cursor: urls?.length ? "pointer" : "default" }}
+    >
       <div className="pMediaRow">
         {urls?.length ? (
           urls.map((u) => (
@@ -99,18 +123,26 @@ function PhotoBoxSquare({ urls, onOpenViewer }) {
   );
 }
 
-function ShipmentCard({ ev, actionsOpen, onToggleActions, onRefused, onReceived, onOpenViewer }) {
+function ShipmentCard({
+  ev,
+  actionsOpen,
+  onToggleActions,
+  onRefused,
+  onReceived,
+  onOpenViewer,
+}) {
   const it = ev.items;
   const meta = ev.meta || {};
 
-  // 1) фото доставки (meta.photo_paths) 2) якщо нема — фото товару
-  const shipUrls = (meta.photo_paths ?? []).map(getPublicPhotoUrl);
+  // ВАЖЛИВО: спочатку фото товару зі складу, а В КІНЦІ фото, додані при відправленні
   const itemUrls = (it?.photo_paths ?? [])
     .map((p) => normalizeItemPhotoPath(it.id, p))
     .filter(Boolean)
     .map(getPublicPhotoUrl);
 
-  const urls = shipUrls.length ? shipUrls : itemUrls;
+  const shipUrls = (meta.photo_paths ?? []).map(getPublicPhotoUrl);
+
+  const urls = uniq([...itemUrls, ...shipUrls]);
 
   const title = `${it?.title ?? "Товар"}${it?.size ? ` • ${it.size}` : ""}`;
 
@@ -121,12 +153,23 @@ function ShipmentCard({ ev, actionsOpen, onToggleActions, onRefused, onReceived,
         <div className="pBadge right warn">x{ev.qty}</div>
       </div>
 
-      <PhotoBoxSquare urls={urls} onOpenViewer={urls.length ? onOpenViewer : undefined} />
+      <PhotoBoxSquare urls={urls} onOpenViewer={onOpenViewer} />
 
       <div className="pBody">
         <div className="pTitle" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ color: "#1d4ed8", display: "grid", placeItems: "center" }}><IconTruck /></span>
-          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{title}</span>
+          <span style={{ color: "#1d4ed8", display: "grid", placeItems: "center" }}>
+            <IconTruck />
+          </span>
+          <span
+            style={{
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {title}
+          </span>
         </div>
 
         <div className="pSub">
@@ -136,13 +179,17 @@ function ShipmentCard({ ev, actionsOpen, onToggleActions, onRefused, onReceived,
         <div className="pInfoRow" style={{ marginTop: 10 }}>
           <div className="pInfo">
             <div className="pInfoLabel">Клієнт</div>
-            <div className="pInfoValue" style={{ fontSize: 13 }}>{meta.full_name || "—"}</div>
+            <div className="pInfoValue" style={{ fontSize: 13 }}>
+              {meta.full_name || "—"}
+            </div>
             <div className="pInfoSmall">{meta.phone || ""}</div>
           </div>
 
           <div className="pInfo">
             <div className="pInfoLabel">Адреса</div>
-            <div className="pInfoValue" style={{ fontSize: 13 }}>{meta.city || "—"}</div>
+            <div className="pInfoValue" style={{ fontSize: 13 }}>
+              {meta.city || "—"}
+            </div>
             <div className="pInfoSmall">{meta.branch ? `Відділення: ${meta.branch}` : ""}</div>
           </div>
         </div>
@@ -163,9 +210,10 @@ function ShipmentCard({ ev, actionsOpen, onToggleActions, onRefused, onReceived,
             </div>
           )}
 
-          <div className="pStockPill" style={{ background: "rgba(37,99,235,.10)", borderColor: "rgba(37,99,235,.18)", color: "#1d4ed8" }}>
-            <span className="dot" style={{ background: "#2563eb" }} />
-            <span>open</span>
+          {/* прибрали "open" */}
+          <div className="pStockPill" style={{ background: "rgba(245,158,11,.12)", borderColor: "rgba(245,158,11,.18)", color: "#92400E" }}>
+            <span className="dot" style={{ background: "#f59e0b" }} />
+            <span>в дорозі</span>
           </div>
         </div>
 
@@ -211,7 +259,9 @@ export default function Home() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -265,7 +315,9 @@ export default function Home() {
           placeholder="Пошук доставок: ПІБ / телефон / товар / місто..."
           style={{ flex: "1 1 260px" }}
         />
-        <button className="btnSecondary" onClick={load} type="button">Оновити</button>
+        <button className="btnSecondary" onClick={load} type="button">
+          Оновити
+        </button>
       </div>
 
       {err ? <div className="errorBox">{err}</div> : null}
@@ -276,13 +328,14 @@ export default function Home() {
           const it = ev.items;
           const meta = ev.meta || {};
 
-          const shipUrls = (meta.photo_paths ?? []).map(getPublicPhotoUrl);
           const itemUrls = (it?.photo_paths ?? [])
             .map((p) => normalizeItemPhotoPath(it.id, p))
             .filter(Boolean)
             .map(getPublicPhotoUrl);
 
-          const urls = shipUrls.length ? shipUrls : itemUrls;
+          const shipUrls = (meta.photo_paths ?? []).map(getPublicPhotoUrl);
+
+          const urls = uniq([...itemUrls, ...shipUrls]);
 
           return (
             <ShipmentCard
