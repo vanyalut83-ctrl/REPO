@@ -604,3 +604,4 @@ label{
   box-shadow: var(--shadow2);
 }
 .table thead th{ background: rgba(246,247,251,.9); }
+html, body { overscroll-behavior: none; }
