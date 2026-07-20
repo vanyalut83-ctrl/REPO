@@ -1,3 +1,4 @@
+// src/pages/Stock.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { db } from "../services/supabase";
@@ -33,18 +34,43 @@ function normalizeItemPhotoPath(itemId, p) {
 function IconEdit({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <path d="M12 20h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
+      <path d="M12 20h9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path
+        d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
     </svg>
   );
 }
 function IconShip({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <path d="M3 7h11v10H3V7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
-      <path d="M14 10h4l3 3v4h-7v-7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
-      <path d="M7 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" stroke="currentColor" strokeWidth="2"/>
-      <path d="M17 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" stroke="currentColor" strokeWidth="2"/>
+      <path d="M3 7h11v10H3V7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M14 10h4l3 3v4h-7v-7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M7 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" stroke="currentColor" strokeWidth="2" />
+      <path d="M17 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+function IconTrash({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <path d="M3 6h18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path
+        d="M8 6V4h8v2"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path
+        d="M6 6l1 16h10l1-16"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path d="M10 11v7M14 11v7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
 }
@@ -79,8 +105,7 @@ function PhotoViewer({ open, urls, startIndex, onClose }) {
     const el = rowRef.current;
     if (!el) return;
     const w = el.clientWidth || 1;
-    const next = Math.round(el.scrollLeft / w);
-    setIdx(next);
+    setIdx(Math.round(el.scrollLeft / w));
   }
 
   if (!open) return null;
@@ -88,10 +113,10 @@ function PhotoViewer({ open, urls, startIndex, onClose }) {
   return (
     <div className="viewerOverlay" onClick={onClose}>
       <div className="viewerTop" onClick={(e) => e.stopPropagation()}>
-        <div className="viewerCount">
-          {urls?.length ? `${idx + 1} / ${urls.length}` : ""}
-        </div>
-        <button className="viewerClose" type="button" onClick={onClose}>Закрити</button>
+        <div className="viewerCount">{urls?.length ? `${idx + 1} / ${urls.length}` : ""}</div>
+        <button className="viewerClose" type="button" onClick={onClose}>
+          Закрити
+        </button>
       </div>
 
       <div className="viewerRow" ref={rowRef} onScroll={onScroll} onClick={(e) => e.stopPropagation()}>
@@ -107,7 +132,12 @@ function PhotoViewer({ open, urls, startIndex, onClose }) {
 
 function PhotoBoxSquare({ urls, onOpenViewer }) {
   return (
-    <div className="pMedia" role="button" onClick={onOpenViewer} style={{ cursor: urls?.length ? "pointer" : "default" }}>
+    <div
+      className="pMedia"
+      role="button"
+      onClick={urls?.length ? onOpenViewer : undefined}
+      style={{ cursor: urls?.length ? "pointer" : "default" }}
+    >
       <div className="pMediaRow">
         {urls?.length ? (
           urls.map((u) => (
@@ -216,7 +246,7 @@ function AddPhotoCarousel({ photos, onAdd, onRemove }) {
             {photos.map((p, idx) => (
               <div className="photoSlide" key={p.url}>
                 <img className="photoImg" src={p.url} alt="" />
-                <button type="button" className="photoRemove" onClick={() => onRemove(idx)} title="Видалити">
+                <button type="button" className="photoRemove" onClick={() => onRemove(idx)} title="Видалити фото">
                   ✕
                 </button>
               </div>
@@ -264,6 +294,7 @@ export default function Stock() {
   // edit
   const [editOpen, setEditOpen] = useState(false);
   const [busyEdit, setBusyEdit] = useState(false);
+  const [busyDelete, setBusyDelete] = useState(false);
   const [activeItem, setActiveItem] = useState(null);
   const [editForm, setEditForm] = useState({
     title: "",
@@ -292,7 +323,9 @@ export default function Stock() {
 
   function revokePreviews(arr) {
     for (const p of arr) {
-      try { URL.revokeObjectURL(p.url); } catch {}
+      try {
+        URL.revokeObjectURL(p.url);
+      } catch {}
     }
   }
 
@@ -309,13 +342,16 @@ export default function Stock() {
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+  }, []);
 
   function onFilesSelected(setter) {
     return (e) => {
       const files = Array.from(e.target.files || []);
       e.target.value = "";
       if (!files.length) return;
+
       setter((prev) => [
         ...prev,
         ...files
@@ -363,12 +399,18 @@ export default function Stock() {
       qty_in_stock: "0",
       qty_in_delivery: "0",
     });
-    setCreatePhotos((prev) => { revokePreviews(prev); return []; });
+    setCreatePhotos((prev) => {
+      revokePreviews(prev);
+      return [];
+    });
     setCreateOpen(true);
   }
   function closeCreate() {
     setCreateOpen(false);
-    setCreatePhotos((prev) => { revokePreviews(prev); return []; });
+    setCreatePhotos((prev) => {
+      revokePreviews(prev);
+      return [];
+    });
   }
 
   function openEdit(item) {
@@ -382,31 +424,44 @@ export default function Stock() {
       cost: String(item.cost ?? 0),
       sale_price: String(item.sale_price ?? 0),
     });
-    setEditNewPhotos((prev) => { revokePreviews(prev); return []; });
+    setEditNewPhotos((prev) => {
+      revokePreviews(prev);
+      return [];
+    });
     setEditOpen(true);
   }
   function closeEdit() {
     setEditOpen(false);
     setActiveItem(null);
-    setEditNewPhotos((prev) => { revokePreviews(prev); return []; });
+    setEditNewPhotos((prev) => {
+      revokePreviews(prev);
+      return [];
+    });
   }
 
   function openShip(item) {
     setErr("");
     setShipItem(item);
     setShipForm({ full_name: "", phone: "", city: "", branch: "", qty: "1" });
-    setShipPhotos((prev) => { revokePreviews(prev); return []; });
+    setShipPhotos((prev) => {
+      revokePreviews(prev);
+      return [];
+    });
     setShipOpen(true);
   }
   function closeShip() {
     setShipOpen(false);
     setShipItem(null);
-    setShipPhotos((prev) => { revokePreviews(prev); return []; });
+    setShipPhotos((prev) => {
+      revokePreviews(prev);
+      return [];
+    });
   }
 
   async function onCreateSubmit(e) {
     e.preventDefault();
     setErr("");
+
     const title = createForm.title.trim();
     if (!title) return setErr("Вкажи назву товару");
 
@@ -424,10 +479,12 @@ export default function Stock() {
     setBusyCreate(true);
     try {
       const created = await createItem(payload);
+
       for (const p of createPhotos) {
         const path = await uploadItemPhoto({ itemId: created.id, file: p.file });
         await appendItemPhotoPath(created.id, path);
       }
+
       closeCreate();
       await load();
     } catch (e2) {
@@ -440,6 +497,7 @@ export default function Stock() {
   async function onEditSave() {
     if (!activeItem) return;
     setErr("");
+
     const title = editForm.title.trim();
     if (!title) return setErr("Вкажи назву товару");
 
@@ -468,6 +526,58 @@ export default function Stock() {
       setErr(e?.message ?? "Помилка збереження");
     } finally {
       setBusyEdit(false);
+    }
+  }
+
+  async function deleteItemPhotosBestEffort(itemId) {
+    // видаляємо тільки фото товару в папці itemId/*
+    // (якщо policies не дозволяють list/remove — просто пропуститься)
+    try {
+      const bucket = db.storage.from("item-photos");
+
+      const { data: listData, error: listErr } = await bucket.list(itemId, {
+        limit: 1000,
+        offset: 0,
+        sortBy: { column: "name", order: "asc" },
+      });
+      if (listErr) return;
+
+      const names = (listData ?? [])
+        .filter((x) => x?.name && x.name !== ".emptyFolderPlaceholder")
+        .map((x) => `${itemId}/${x.name}`);
+
+      if (!names.length) return;
+
+      await bucket.remove(names);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function onDeleteItem() {
+    if (!activeItem) return;
+
+    const ok = window.confirm(
+      `Видалити товар "${activeItem.title}"?\nЦе видалить також історію (події) по ньому.`
+    );
+    if (!ok) return;
+
+    setErr("");
+    setBusyDelete(true);
+    try {
+      // 1) спробувати почистити фото (не обов'язково)
+      await deleteItemPhotosBestEffort(activeItem.id);
+
+      // 2) видалити товар (item_events має бути ON DELETE CASCADE)
+      const { error } = await db.from("items").delete().eq("id", activeItem.id);
+      if (error) throw error;
+
+      closeEdit();
+      await load();
+    } catch (e) {
+      setErr(e?.message ?? "Помилка видалення");
+    } finally {
+      setBusyDelete(false);
     }
   }
 
@@ -512,7 +622,6 @@ export default function Stock() {
       });
       if (rpcErr) throw rpcErr;
 
-      // фото доставки -> записати в item_events.meta.photo_paths (щоб Home показував)
       const uploaded = [];
       for (const p of shipPhotos) {
         const path = await uploadShipmentPhoto(eventId, p.file);
@@ -532,9 +641,7 @@ export default function Stock() {
 
       closeShip();
       await load();
-
-      // Перекинути на Головну — там відразу буде картка доставки
-      navigate("/");
+      navigate("/"); // на головну (доставки)
     } catch (e2) {
       setErr(e2?.message ?? "Помилка відправлення");
     } finally {
@@ -552,7 +659,9 @@ export default function Stock() {
           placeholder="Пошук товарів..."
           style={{ flex: "1 1 260px" }}
         />
-        <button className="btnSecondary" onClick={load} type="button">Оновити</button>
+        <button className="btnSecondary" onClick={load} type="button">
+          Оновити
+        </button>
       </div>
 
       {err ? <div className="errorBox">{err}</div> : null}
@@ -577,21 +686,47 @@ export default function Stock() {
         })}
       </div>
 
-      <button className="fabAdd" type="button" onClick={openCreate}>+ Додати</button>
+      <button className="fabAdd" type="button" onClick={openCreate}>
+        + Додати
+      </button>
       <div style={{ height: 84 }} />
 
-      <input ref={createInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setCreatePhotos)} style={{ display: "none" }} />
-      <input ref={editInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setEditNewPhotos)} style={{ display: "none" }} />
-      <input ref={shipInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setShipPhotos)} style={{ display: "none" }} />
+      {/* hidden choosers */}
+      <input
+        ref={createInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={onFilesSelected(setCreatePhotos)}
+        style={{ display: "none" }}
+      />
+      <input
+        ref={editInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={onFilesSelected(setEditNewPhotos)}
+        style={{ display: "none" }}
+      />
+      <input
+        ref={shipInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={onFilesSelected(setShipPhotos)}
+        style={{ display: "none" }}
+      />
 
-      {/* CREATE */}
+      {/* CREATE MODAL */}
       <Modal open={createOpen} onClose={closeCreate}>
         <div className="modalHeader">
           <div>
             <div className="modalTitle">Додати товар</div>
             <div className="modalSubtitle">Фото → дані → створити</div>
           </div>
-          <button className="iconBtn" onClick={closeCreate} type="button">✕</button>
+          <button className="iconBtn" onClick={closeCreate} type="button">
+            ✕
+          </button>
         </div>
 
         <div className="modalBody">
@@ -602,64 +737,113 @@ export default function Stock() {
           />
 
           <form id="createForm" onSubmit={onCreateSubmit} className="form">
-            <label>Назва
-              <input className="input" value={createForm.title} onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })} />
+            <label>
+              Назва
+              <input
+                className="input"
+                value={createForm.title}
+                onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })}
+              />
             </label>
 
             <div className="row2">
-              <label>Розмір
-                <input className="input" value={createForm.size} onChange={(e) => setCreateForm({ ...createForm, size: e.target.value })} />
+              <label>
+                Розмір
+                <input
+                  className="input"
+                  value={createForm.size}
+                  onChange={(e) => setCreateForm({ ...createForm, size: e.target.value })}
+                />
               </label>
-              <label>SKU
-                <input className="input" value={createForm.sku} onChange={(e) => setCreateForm({ ...createForm, sku: e.target.value })} />
+              <label>
+                SKU
+                <input
+                  className="input"
+                  value={createForm.sku}
+                  onChange={(e) => setCreateForm({ ...createForm, sku: e.target.value })}
+                />
               </label>
             </div>
 
-            <label>Тег/Нотатка
-              <input className="input" value={createForm.note} onChange={(e) => setCreateForm({ ...createForm, note: e.target.value })} placeholder="Напр. Одяг" />
+            <label>
+              Тег/Нотатка
+              <input
+                className="input"
+                value={createForm.note}
+                onChange={(e) => setCreateForm({ ...createForm, note: e.target.value })}
+              />
             </label>
 
             <div className="row2">
-              <label>Собівартість
-                <input className="input" inputMode="decimal" value={createForm.cost} onChange={(e) => setCreateForm({ ...createForm, cost: e.target.value })} />
+              <label>
+                Собівартість
+                <input
+                  className="input"
+                  inputMode="decimal"
+                  value={createForm.cost}
+                  onChange={(e) => setCreateForm({ ...createForm, cost: e.target.value })}
+                />
               </label>
-              <label>Ціна продажу
-                <input className="input" inputMode="decimal" value={createForm.sale_price} onChange={(e) => setCreateForm({ ...createForm, sale_price: e.target.value })} />
+              <label>
+                Ціна продажу
+                <input
+                  className="input"
+                  inputMode="decimal"
+                  value={createForm.sale_price}
+                  onChange={(e) => setCreateForm({ ...createForm, sale_price: e.target.value })}
+                />
               </label>
             </div>
 
             <div className="row2">
-              <label>В наявності
-                <input className="input" inputMode="numeric" value={createForm.qty_in_stock} onChange={(e) => setCreateForm({ ...createForm, qty_in_stock: e.target.value })} />
+              <label>
+                В наявності
+                <input
+                  className="input"
+                  inputMode="numeric"
+                  value={createForm.qty_in_stock}
+                  onChange={(e) => setCreateForm({ ...createForm, qty_in_stock: e.target.value })}
+                />
               </label>
-              <label>В доставці
-                <input className="input" inputMode="numeric" value={createForm.qty_in_delivery} onChange={(e) => setCreateForm({ ...createForm, qty_in_delivery: e.target.value })} />
+              <label>
+                В доставці
+                <input
+                  className="input"
+                  inputMode="numeric"
+                  value={createForm.qty_in_delivery}
+                  onChange={(e) => setCreateForm({ ...createForm, qty_in_delivery: e.target.value })}
+                />
               </label>
             </div>
           </form>
         </div>
 
         <div className="modalFooter">
-          <button className="btnSecondary" type="button" onClick={closeCreate} disabled={busyCreate}>Скасувати</button>
+          <button className="btnSecondary" type="button" onClick={closeCreate} disabled={busyCreate}>
+            Скасувати
+          </button>
           <button className="btn" form="createForm" type="submit" disabled={busyCreate}>
             {busyCreate ? "Зберігаю..." : "Створити"}
           </button>
         </div>
       </Modal>
 
-      {/* EDIT */}
+      {/* EDIT MODAL (додали видалення) */}
       <Modal open={editOpen} onClose={closeEdit}>
         <div className="modalHeader">
           <div>
             <div className="modalTitle">Картка товару</div>
-            <div className="modalSubtitle">Редагування</div>
+            <div className="modalSubtitle">Редагування + видалення</div>
           </div>
-          <button className="iconBtn" onClick={closeEdit} type="button">✕</button>
+          <button className="iconBtn" onClick={closeEdit} type="button">
+            ✕
+          </button>
         </div>
 
         <div className="modalBody">
           {activeItem ? (
             <>
+              {/* існуючі фото */}
               <div className="photoBox" style={{ marginBottom: 10 }}>
                 <div className="photoRow">
                   {(activeItem.photo_paths ?? []).length ? (
@@ -667,7 +851,18 @@ export default function Stock() {
                       const norm = normalizeItemPhotoPath(activeItem.id, p);
                       const url = getPublicPhotoUrl(norm);
                       return (
-                        <div className="photoSlide" key={p} onClick={() => openViewer((activeItem.photo_paths ?? []).map(pp => getPublicPhotoUrl(normalizeItemPhotoPath(activeItem.id, pp))), 0)}>
+                        <div
+                          className="photoSlide"
+                          key={p}
+                          onClick={() => {
+                            const urls = (activeItem.photo_paths ?? [])
+                              .map((pp) => normalizeItemPhotoPath(activeItem.id, pp))
+                              .filter(Boolean)
+                              .map(getPublicPhotoUrl);
+                            openViewer(urls, 0);
+                          }}
+                          style={{ cursor: "pointer" }}
+                        >
                           <img className="photoImg" src={url} alt="" />
                         </div>
                       );
@@ -685,6 +880,7 @@ export default function Stock() {
                 </div>
               </div>
 
+              {/* нові фото (ще не завантажені) */}
               {editNewPhotos.length ? (
                 <AddPhotoCarousel
                   photos={editNewPhotos}
@@ -694,29 +890,61 @@ export default function Stock() {
               ) : null}
 
               <form className="form" onSubmit={(e) => e.preventDefault()}>
-                <label>Назва
-                  <input className="input" value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
+                <label>
+                  Назва
+                  <input
+                    className="input"
+                    value={editForm.title}
+                    onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                  />
                 </label>
 
                 <div className="row2">
-                  <label>Розмір
-                    <input className="input" value={editForm.size} onChange={(e) => setEditForm({ ...editForm, size: e.target.value })} />
+                  <label>
+                    Розмір
+                    <input
+                      className="input"
+                      value={editForm.size}
+                      onChange={(e) => setEditForm({ ...editForm, size: e.target.value })}
+                    />
                   </label>
-                  <label>SKU
-                    <input className="input" value={editForm.sku} onChange={(e) => setEditForm({ ...editForm, sku: e.target.value })} />
+                  <label>
+                    SKU
+                    <input
+                      className="input"
+                      value={editForm.sku}
+                      onChange={(e) => setEditForm({ ...editForm, sku: e.target.value })}
+                    />
                   </label>
                 </div>
 
-                <label>Тег/Нотатка
-                  <input className="input" value={editForm.note} onChange={(e) => setEditForm({ ...editForm, note: e.target.value })} />
+                <label>
+                  Тег/Нотатка
+                  <input
+                    className="input"
+                    value={editForm.note}
+                    onChange={(e) => setEditForm({ ...editForm, note: e.target.value })}
+                  />
                 </label>
 
                 <div className="row2">
-                  <label>Собівартість
-                    <input className="input" inputMode="decimal" value={editForm.cost} onChange={(e) => setEditForm({ ...editForm, cost: e.target.value })} />
+                  <label>
+                    Собівартість
+                    <input
+                      className="input"
+                      inputMode="decimal"
+                      value={editForm.cost}
+                      onChange={(e) => setEditForm({ ...editForm, cost: e.target.value })}
+                    />
                   </label>
-                  <label>Ціна продажу
-                    <input className="input" inputMode="decimal" value={editForm.sale_price} onChange={(e) => setEditForm({ ...editForm, sale_price: e.target.value })} />
+                  <label>
+                    Ціна продажу
+                    <input
+                      className="input"
+                      inputMode="decimal"
+                      value={editForm.sale_price}
+                      onChange={(e) => setEditForm({ ...editForm, sale_price: e.target.value })}
+                    />
                   </label>
                 </div>
               </form>
@@ -725,28 +953,64 @@ export default function Stock() {
         </div>
 
         <div className="modalFooter">
-          <button className="btnSecondary" type="button" onClick={closeEdit} disabled={busyEdit}>Закрити</button>
+          <button className="btnSecondary" type="button" onClick={closeEdit} disabled={busyEdit || busyDelete}>
+            Закрити
+          </button>
+
           {activeItem ? (
             <>
-              <button className="btnSecondary" type="button" onClick={() => openShip(activeItem)} disabled={busyEdit}>
+              <button
+                className="btnSecondary"
+                type="button"
+                onClick={() => openShip(activeItem)}
+                disabled={busyEdit || busyDelete}
+              >
                 Відправити
               </button>
-              <button className="btn" type="button" onClick={onEditSave} disabled={busyEdit}>
+
+              <button
+                className="btn"
+                type="button"
+                onClick={onEditSave}
+                disabled={busyEdit || busyDelete}
+              >
                 {busyEdit ? "Зберігаю..." : "Зберегти"}
+              </button>
+
+              {/* НОВЕ: видалення */}
+              <button
+                type="button"
+                onClick={onDeleteItem}
+                disabled={busyEdit || busyDelete}
+                className="btnSecondary"
+                style={{
+                  borderColor: "rgba(239,68,68,.25)",
+                  background: "rgba(239,68,68,.10)",
+                  color: "#991B1B",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontWeight: 950,
+                }}
+                title="Видалити товар"
+              >
+                <IconTrash /> {busyDelete ? "Видаляю..." : "Видалити"}
               </button>
             </>
           ) : null}
         </div>
       </Modal>
 
-      {/* SHIP */}
+      {/* SHIP MODAL */}
       <Modal open={shipOpen} onClose={closeShip}>
         <div className="modalHeader">
           <div>
             <div className="modalTitle">Відправити</div>
             <div className="modalSubtitle">{shipItem ? shipItem.title : ""}</div>
           </div>
-          <button className="iconBtn" onClick={closeShip} type="button">✕</button>
+          <button className="iconBtn" onClick={closeShip} type="button">
+            ✕
+          </button>
         </div>
 
         <div className="modalBody">
@@ -758,31 +1022,60 @@ export default function Stock() {
 
           <form id="shipForm" onSubmit={shipSubmit} className="form">
             <div className="row2">
-              <label>ПІБ
-                <input className="input" value={shipForm.full_name} onChange={(e) => setShipForm({ ...shipForm, full_name: e.target.value })} />
+              <label>
+                ПІБ
+                <input
+                  className="input"
+                  value={shipForm.full_name}
+                  onChange={(e) => setShipForm({ ...shipForm, full_name: e.target.value })}
+                />
               </label>
-              <label>Телефон
-                <input className="input" inputMode="tel" value={shipForm.phone} onChange={(e) => setShipForm({ ...shipForm, phone: e.target.value })} />
+              <label>
+                Телефон
+                <input
+                  className="input"
+                  inputMode="tel"
+                  value={shipForm.phone}
+                  onChange={(e) => setShipForm({ ...shipForm, phone: e.target.value })}
+                />
               </label>
             </div>
 
             <div className="row2">
-              <label>Місто
-                <input className="input" value={shipForm.city} onChange={(e) => setShipForm({ ...shipForm, city: e.target.value })} />
+              <label>
+                Місто
+                <input
+                  className="input"
+                  value={shipForm.city}
+                  onChange={(e) => setShipForm({ ...shipForm, city: e.target.value })}
+                />
               </label>
-              <label>№ відділення
-                <input className="input" value={shipForm.branch} onChange={(e) => setShipForm({ ...shipForm, branch: e.target.value })} />
+              <label>
+                № відділення
+                <input
+                  className="input"
+                  value={shipForm.branch}
+                  onChange={(e) => setShipForm({ ...shipForm, branch: e.target.value })}
+                />
               </label>
             </div>
 
-            <label>Кількість
-              <input className="input" inputMode="numeric" value={shipForm.qty} onChange={(e) => setShipForm({ ...shipForm, qty: e.target.value })} />
+            <label>
+              Кількість
+              <input
+                className="input"
+                inputMode="numeric"
+                value={shipForm.qty}
+                onChange={(e) => setShipForm({ ...shipForm, qty: e.target.value })}
+              />
             </label>
           </form>
         </div>
 
         <div className="modalFooter">
-          <button className="btnSecondary" type="button" onClick={closeShip} disabled={busyShip}>Скасувати</button>
+          <button className="btnSecondary" type="button" onClick={closeShip} disabled={busyShip}>
+            Скасувати
+          </button>
           <button className="btn" form="shipForm" type="submit" disabled={busyShip}>
             {busyShip ? "Відправляю..." : "Відправити"}
           </button>
