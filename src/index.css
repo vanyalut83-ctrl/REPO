@@ -214,3 +214,91 @@ body { margin: 0; background: var(--bg); color: var(--text); }
   color: var(--text);
   border-radius: 12px;
 }
+
+/* photo carousel */
+.photoBox{
+  margin-top: 12px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.photoRow{
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  padding: 12px;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+}
+
+.photoSlide, .photoAddSmall{
+  scroll-snap-align: start;
+  flex: 0 0 82%;
+  position: relative;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: #f3f4f6;
+  aspect-ratio: 4 / 3;
+}
+
+@media (min-width: 700px){
+  .photoSlide, .photoAddSmall{ flex-basis: 320px; }
+}
+
+.photoImg{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photoRemove{
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  border: 1px solid rgba(15,23,42,.12);
+  background: rgba(255,255,255,.9);
+  border-radius: 12px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.photoAddBig{
+  width: 100%;
+  border: 0;
+  background: transparent;
+  padding: 26px 14px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  gap: 8px;
+}
+
+.photoAddSmall{
+  border: 1px dashed rgba(15,23,42,.18);
+  background: rgba(37,99,235,.06);
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  gap: 6px;
+}
+
+.photoPlus{
+  width: 54px;
+  height: 54px;
+  border-radius: 18px;
+  background: rgba(37,99,235,.12);
+  display: grid;
+  place-items: center;
+  font-size: 26px;
+  color: #1d4ed8;
+}
+
+.photoAddText{
+  font-weight: 700;
+  color: rgba(15,23,42,.75);
+}

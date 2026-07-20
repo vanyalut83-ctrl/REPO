@@ -11,10 +11,105 @@ function toNumber(v) {
   const n = Number(String(v ?? "").replace(",", "."));
   return Number.isFinite(n) ? n : 0;
 }
-
 function toInt(v) {
   const n = parseInt(String(v ?? ""), 10);
   return Number.isFinite(n) ? n : 0;
+}
+
+function PhotoCarousel({
+  photos,
+  onAdd,
+  onRemove,
+  emptyText = "Додати фото",
+}) {
+  return (
+    <div className="photoBox">
+      <div className="photoRow">
+        {photos.length === 0 ? (
+          <button type="button" className="photoAddBig" onClick={onAdd}>
+            <div className="photoPlus">＋</div>
+            <div className="photoAddText">{emptyText}</div>
+            <div className="photoSubText">
+              iPhone/Android запропонує варіанти (камера/фото/файли)
+            </div>
+          </button>
+        ) : (
+          <>
+            {photos.map((p, idx) => (
+              <div className="photoSlide" key={p.url}>
+                <img className="photoImg" src={p.url} alt="" />
+                <button
+                  type="button"
+                  className="photoRemove"
+                  onClick={() => onRemove(idx)}
+                  aria-label="Remove photo"
+                  title="Видалити"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+
+            {/* Плитка "Додати" після останнього фото */}
+            <button type="button" className="photoAddSmall" onClick={onAdd}>
+              <div className="photoPlus">＋</div>
+              <div className="photoAddText">Додати</div>
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function PreviewCard({ preview }) {
+  return (
+    <div className="previewCard">
+      <div className="previewTop">
+        <div className="previewTitle">{preview.title}</div>
+        <div className="previewMeta">
+          <span>Розмір: {preview.size}</span>
+          {preview.sku ? <span>SKU: {preview.sku}</span> : null}
+        </div>
+
+        <div className="previewPriceRow">
+          <div className="pill">
+            <span>Ціна</span>
+            <b>₴ {preview.sale_price}</b>
+          </div>
+          <div className="pill">
+            <span>Собів.</span>
+            <b>₴ {preview.cost}</b>
+          </div>
+          <div className="pill">
+            <span>Фото</span>
+            <b>{preview.photosCount}</b>
+          </div>
+        </div>
+      </div>
+
+      <div className="previewGrid">
+        <div>
+          <span>В наявності</span>
+          <b>{preview.qty_in_stock}</b>
+        </div>
+        <div>
+          <span>В доставці</span>
+          <b>{preview.qty_in_delivery}</b>
+        </div>
+        <div>
+          <span>Отримано</span>
+          <b>{preview.qty_delivered_total}</b>
+        </div>
+        <div>
+          <span>Повернено</span>
+          <b>{preview.qty_returned_total}</b>
+        </div>
+      </div>
+
+      {preview.note ? <div className="previewNote">{preview.note}</div> : null}
+    </div>
+  );
 }
 
 export default function Stock() {
@@ -27,7 +122,6 @@ export default function Stock() {
 
   const [open, setOpen] = useState(false);
 
-  // форма
   const [form, setForm] = useState({
     title: "",
     size: "",
@@ -39,8 +133,8 @@ export default function Stock() {
     qty_in_delivery: "0",
   });
 
-  // фото: тримаємо і File, і локальний preview url
-  const [photos, setPhotos] = useState([]); // [{ file: File, url: string }]
+  // Фото: [{file, url}]
+  const [photos, setPhotos] = useState([]);
   const fileInputRef = useRef(null);
 
   async function load() {
@@ -60,23 +154,14 @@ export default function Stock() {
     load();
   }, []);
 
-  // очищення objectURL, щоб не текла пам'ять
+  // close modal by Esc
   useEffect(() => {
-    return () => {
-      for (const p of photos) URL.revokeObjectURL(p.url);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s) return items;
-    return items.filter((x) =>
-      `${x.title ?? ""} ${x.size ?? ""} ${x.sku ?? ""}`
-        .toLowerCase()
-        .includes(s)
-    );
-  }, [items, q]);
+    function onKeyDown(e) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    if (open) window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open]);
 
   function resetCreateState() {
     setForm({
@@ -90,7 +175,6 @@ export default function Stock() {
       qty_in_delivery: "0",
     });
 
-    // revoke preview urls
     setPhotos((prev) => {
       for (const p of prev) URL.revokeObjectURL(p.url);
       return [];
@@ -107,25 +191,21 @@ export default function Stock() {
     setOpen(false);
   }
 
-  // OLX-like: один input accept="image/*" => на iPhone/Android з’явиться системний вибір:
-  // Камера / Фото / Файли (залежить від пристрою)
+  // ВАЖЛИВО: один input accept=image/* -> iOS/Android покаже системний chooser (як OLX)
   function pickPhotos() {
     fileInputRef.current?.click();
   }
 
   function onFilesSelected(e) {
     const files = Array.from(e.target.files || []);
-    // дозволимо повторно вибирати ті ж файли
-    e.target.value = "";
-
+    e.target.value = ""; // дозволяє вибрати ті ж файли повторно
     if (!files.length) return;
 
     setPhotos((prev) => {
       const next = [...prev];
       for (const f of files) {
         if (!f.type?.startsWith("image/")) continue;
-        const url = URL.createObjectURL(f);
-        next.push({ file: f, url });
+        next.push({ file: f, url: URL.createObjectURL(f) });
       }
       return next;
     });
@@ -140,6 +220,32 @@ export default function Stock() {
       return copy;
     });
   }
+
+  const filtered = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return items;
+    return items.filter((x) =>
+      `${x.title ?? ""} ${x.size ?? ""} ${x.sku ?? ""}`
+        .toLowerCase()
+        .includes(s)
+    );
+  }, [items, q]);
+
+  const preview = useMemo(() => {
+    return {
+      title: form.title.trim() || "Назва товару",
+      size: (form.size ?? "").trim() || "-",
+      sku: (form.sku ?? "").trim() || "",
+      note: (form.note ?? "").trim() || "",
+      sale_price: toNumber(form.sale_price),
+      cost: toNumber(form.cost),
+      qty_in_stock: toInt(form.qty_in_stock),
+      qty_in_delivery: toInt(form.qty_in_delivery),
+      qty_delivered_total: 0,
+      qty_returned_total: 0,
+      photosCount: photos.length,
+    };
+  }, [form, photos]);
 
   async function onCreate(e) {
     e.preventDefault();
@@ -156,20 +262,17 @@ export default function Stock() {
       size: form.size.trim() || null,
       sku: form.sku.trim() || null,
       note: form.note.trim() || null,
-
       cost: toNumber(form.cost),
       sale_price: toNumber(form.sale_price),
-
       qty_in_stock: toInt(form.qty_in_stock),
       qty_in_delivery: toInt(form.qty_in_delivery),
-      // qty_delivered_total / qty_returned_total — хай лишаються дефолтні 0 в БД
     };
 
     setBusyCreate(true);
     try {
       const created = await createItem(payload);
 
-      // upload фото (якщо є)
+      // upload photos
       for (const p of photos) {
         const path = await uploadItemPhoto({ itemId: created.id, file: p.file });
         await appendItemPhotoPath(created.id, path);
@@ -185,26 +288,9 @@ export default function Stock() {
     }
   }
 
-  // превʼю картки (як буде виглядати в списку)
-  const preview = useMemo(() => {
-    return {
-      title: form.title || "Назва товару",
-      size: form.size || "-",
-      sale_price: toNumber(form.sale_price),
-      cost: toNumber(form.cost),
-      qty_in_stock: toInt(form.qty_in_stock),
-      qty_in_delivery: toInt(form.qty_in_delivery),
-      // delivered/returned в превʼю як 0
-      qty_delivered_total: 0,
-      qty_returned_total: 0,
-      previewUrl: photos?.[0]?.url || null,
-      photosCount: photos.length,
-    };
-  }, [form, photos]);
-
   return (
     <section>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+      <div className="stockTop">
         <input
           value={q}
           onChange={(e) => setQ(e.target.value)}
@@ -220,7 +306,7 @@ export default function Stock() {
         </button>
       </div>
 
-      {err ? <p style={{ color: "#b42318", marginTop: 10 }}>{err}</p> : null}
+      {err ? <div className="errorBox">{err}</div> : null}
       {loading ? <p style={{ marginTop: 10 }}>Завантаження...</p> : null}
 
       {/* Desktop table */}
@@ -268,8 +354,16 @@ export default function Stock() {
                       }}
                     />
                   )}
+
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    <div
+                      style={{
+                        fontWeight: 800,
+                        whiteSpace: "nowrap",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                      }}
+                    >
                       {x.title}
                     </div>
                     <div style={{ fontSize: 12, color: "var(--muted)" }}>
@@ -300,10 +394,10 @@ export default function Stock() {
                   src={getPublicPhotoUrl(x.photo_paths[0])}
                   alt=""
                   style={{
-                    width: 72,
-                    height: 72,
+                    width: 76,
+                    height: 76,
                     objectFit: "cover",
-                    borderRadius: 14,
+                    borderRadius: 16,
                     border: "1px solid var(--border)",
                     background: "#fff",
                     flex: "0 0 auto",
@@ -312,9 +406,9 @@ export default function Stock() {
               ) : (
                 <div
                   style={{
-                    width: 72,
-                    height: 72,
-                    borderRadius: 14,
+                    width: 76,
+                    height: 76,
+                    borderRadius: 16,
                     border: "1px solid var(--border)",
                     background: "rgba(15,23,42,.03)",
                     flex: "0 0 auto",
@@ -323,34 +417,44 @@ export default function Stock() {
               )}
 
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 800, fontSize: 16, lineHeight: 1.2 }}>
+                <div style={{ fontWeight: 900, fontSize: 16, lineHeight: 1.2 }}>
                   {x.title}
                 </div>
                 <div style={{ color: "var(--muted)", marginTop: 4 }}>
                   Розмір: {x.size ?? "-"}
                 </div>
-                {x.sku ? (
-                  <div style={{ color: "var(--muted)" }}>SKU: {x.sku}</div>
-                ) : null}
+                {x.sku ? <div style={{ color: "var(--muted)" }}>SKU: {x.sku}</div> : null}
               </div>
 
               <div style={{ textAlign: "right" }}>
-                <div style={{ fontWeight: 800 }}>₴ {x.sale_price}</div>
+                <div style={{ fontWeight: 900 }}>₴ {x.sale_price}</div>
                 <div style={{ color: "var(--muted)" }}>собів. ₴ {x.cost}</div>
               </div>
             </div>
 
             <div className="miniGrid">
-              <div><span>В наявності</span><b>{x.qty_in_stock}</b></div>
-              <div><span>В доставці</span><b>{x.qty_in_delivery}</b></div>
-              <div><span>Отримано</span><b>{x.qty_delivered_total}</b></div>
-              <div><span>Повернено</span><b>{x.qty_returned_total}</b></div>
+              <div>
+                <span>В наявності</span>
+                <b>{x.qty_in_stock}</b>
+              </div>
+              <div>
+                <span>В доставці</span>
+                <b>{x.qty_in_delivery}</b>
+              </div>
+              <div>
+                <span>Отримано</span>
+                <b>{x.qty_delivered_total}</b>
+              </div>
+              <div>
+                <span>Повернено</span>
+                <b>{x.qty_returned_total}</b>
+              </div>
             </div>
           </div>
         ))}
       </div>
 
-      {/* hidden input: відкриває iOS/Android chooser (як OLX) */}
+      {/* Hidden chooser */}
       <input
         ref={fileInputRef}
         type="file"
@@ -360,88 +464,31 @@ export default function Stock() {
         style={{ display: "none" }}
       />
 
-      {/* Modal create */}
+      {/* Create modal */}
       {open ? (
         <div className="modalOverlay" onClick={closeCreate}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-              <h3 style={{ margin: 0 }}>Додати товар</h3>
+          <div className="modal modern" onClick={(e) => e.stopPropagation()}>
+            <div className="modalHeader">
+              <div>
+                <div className="modalTitle">Новий товар</div>
+                <div className="modalSubtitle">
+                  Спочатку додай фото (за бажанням), потім заповни дані — превʼю оновлюється одразу.
+                </div>
+              </div>
+
               <button className="iconBtn" onClick={closeCreate} type="button" aria-label="Close">
                 ✕
               </button>
             </div>
 
-            {/* PREVIEW (OLX-style card) */}
-            <div
-              style={{
-                marginTop: 12,
-                border: "1px solid var(--border)",
-                borderRadius: 16,
-                background: "var(--panel)",
-                boxShadow: "var(--shadow)",
-                padding: 12,
-              }}
-            >
-              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                {preview.previewUrl ? (
-                  <img
-                    src={preview.previewUrl}
-                    alt=""
-                    style={{
-                      width: 84,
-                      height: 84,
-                      borderRadius: 16,
-                      objectFit: "cover",
-                      border: "1px solid var(--border)",
-                      background: "#fff",
-                      flex: "0 0 auto",
-                    }}
-                  />
-                ) : (
-                  <div
-                    style={{
-                      width: 84,
-                      height: 84,
-                      borderRadius: 16,
-                      border: "1px dashed var(--border)",
-                      background: "rgba(15,23,42,.02)",
-                      flex: "0 0 auto",
-                      display: "grid",
-                      placeItems: "center",
-                      color: "var(--muted)",
-                      fontSize: 12,
-                      textAlign: "center",
-                      padding: 8,
-                    }}
-                  >
-                    Нема фото
-                  </div>
-                )}
+            {/* TOP PHOTO BLOCK (OLX-like) */}
+            <PhotoCarousel photos={photos} onAdd={pickPhotos} onRemove={removePhoto} />
 
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 900, fontSize: 16, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {preview.title}
-                  </div>
-                  <div style={{ color: "var(--muted)", marginTop: 4 }}>Розмір: {preview.size}</div>
-                  <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
-                    <div style={{ fontWeight: 800 }}>₴ {preview.sale_price}</div>
-                    <div style={{ color: "var(--muted)" }}>собів. ₴ {preview.cost}</div>
-                    <div style={{ color: "var(--muted)" }}>
-                      фото: {preview.photosCount}
-                    </div>
-                  </div>
-                </div>
-              </div>
+            {/* PREVIEW */}
+            <PreviewCard preview={preview} />
 
-              <div className="miniGrid" style={{ marginTop: 12 }}>
-                <div><span>В наявності</span><b>{preview.qty_in_stock}</b></div>
-                <div><span>В доставці</span><b>{preview.qty_in_delivery}</b></div>
-                <div><span>Отримано</span><b>{preview.qty_delivered_total}</b></div>
-                <div><span>Повернено</span><b>{preview.qty_returned_total}</b></div>
-              </div>
-            </div>
-
-            <form onSubmit={onCreate} className="form" style={{ marginTop: 12 }}>
+            {/* FORM */}
+            <form onSubmit={onCreate} className="form">
               <label>
                 Назва
                 <input
@@ -524,69 +571,18 @@ export default function Stock() {
                 </label>
               </div>
 
-              {/* Фото: OLX-like chooser */}
-              <div style={{ display: "grid", gap: 8 }}>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <button className="btnSecondary" type="button" onClick={pickPhotos}>
-                    Додати фото
-                  </button>
-                  <div style={{ alignSelf: "center", color: "var(--muted)", fontSize: 13 }}>
-                    На iPhone/Android з’явиться системний вибір (камера/галерея)
-                  </div>
-                </div>
-
-                {photos.length ? (
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "repeat(auto-fill, minmax(84px, 1fr))",
-                      gap: 10,
-                    }}
-                  >
-                    {photos.map((p, idx) => (
-                      <div key={p.url} style={{ position: "relative" }}>
-                        <img
-                          src={p.url}
-                          alt=""
-                          style={{
-                            width: "100%",
-                            aspectRatio: "1 / 1",
-                            objectFit: "cover",
-                            borderRadius: 14,
-                            border: "1px solid var(--border)",
-                            background: "#fff",
-                          }}
-                        />
-                        <button
-                          type="button"
-                          onClick={() => removePhoto(idx)}
-                          title="Видалити"
-                          style={{
-                            position: "absolute",
-                            top: 6,
-                            right: 6,
-                            border: "1px solid var(--border)",
-                            background: "rgba(255,255,255,.9)",
-                            borderRadius: 10,
-                            padding: "4px 8px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-
-              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 4 }}>
+              <div className="modalActions">
                 <button className="btnSecondary" type="button" onClick={closeCreate} disabled={busyCreate}>
                   Скасувати
                 </button>
                 <button className="btn" type="submit" disabled={busyCreate}>
                   {busyCreate ? "Зберігаю..." : "Створити"}
                 </button>
+              </div>
+
+              <div className="hint">
+                Якщо бачиш помилку про відсутню колонку (наприклад <code>qty_in_stock</code>) — значить в Supabase таблиці
+                інші назви полів. Тоді або перейменуємо колонки, або адаптуємо код під твою схему.
               </div>
             </form>
           </div>
@@ -595,3 +591,11 @@ export default function Stock() {
     </section>
   );
 }
+
+/*
+Потрібні CSS-класи (додай в index.css якщо ще нема):
+- stockTop, errorBox
+- photoBox, photoRow, photoSlide, photoImg, photoAddBig, photoAddSmall, photoPlus, photoAddText, photoSubText, photoRemove
+- previewCard, previewTop, previewTitle, previewMeta, previewPriceRow, pill, previewGrid, previewNote
+- modal modern: modalHeader, modalTitle, modalSubtitle, modalActions, hint
+*/
