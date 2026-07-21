@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { db } from "../services/supabase";
 import { getPublicPhotoUrl } from "../services/photos";
 
@@ -12,7 +12,7 @@ function normalizeItemPhotoPath(itemId, p) {
 function uniq(arr) {
   const seen = new Set();
   const out = [];
-  for (const x of arr) {
+  for (const x of arr || []) {
     if (!x) continue;
     if (seen.has(x)) continue;
     seen.add(x);
@@ -21,237 +21,105 @@ function uniq(arr) {
   return out;
 }
 
-function IconTruck({ size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <path d="M3 7h11v10H3V7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
-      <path d="M14 10h4l3 3v4h-7v-7Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"/>
-      <path d="M7 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" stroke="currentColor" strokeWidth="2"/>
-      <path d="M17 17a2 2 0 1 0 0 4 2 2 0 0 0 0-4Z" stroke="currentColor" strokeWidth="2"/>
-    </svg>
-  );
-}
-function IconCheck({ size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <path d="M20 6 9 17l-5-5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-    </svg>
-  );
-}
-function IconX({ size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <path d="M18 6 6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-    </svg>
-  );
+function money(n) {
+  const v = Number(n || 0);
+  return v.toLocaleString("uk-UA", { maximumFractionDigits: 2 });
 }
 
-function PhotoViewer({ open, urls, startIndex, onClose }) {
-  const rowRef = useRef(null);
-  const [idx, setIdx] = useState(startIndex ?? 0);
-
-  useEffect(() => {
-    if (!open) return;
-    setIdx(startIndex ?? 0);
-    requestAnimationFrame(() => {
-      const el = rowRef.current;
-      if (!el) return;
-      const slide = el.children[startIndex ?? 0];
-      if (slide?.scrollIntoView) slide.scrollIntoView({ behavior: "instant", inline: "start" });
-    });
-  }, [open, startIndex, urls?.length]);
-
-  function onScroll() {
-    const el = rowRef.current;
-    if (!el) return;
-    const w = el.clientWidth || 1;
-    setIdx(Math.round(el.scrollLeft / w));
-  }
-
-  if (!open) return null;
-
-  return (
-    <div className="viewerOverlay" onClick={onClose}>
-      <div className="viewerTop" onClick={(e) => e.stopPropagation()}>
-        <div className="viewerCount">{urls?.length ? `${idx + 1} / ${urls.length}` : ""}</div>
-        <button className="viewerClose" type="button" onClick={onClose}>Закрити</button>
-      </div>
-
-      <div className="viewerRow" ref={rowRef} onScroll={onScroll} onClick={(e) => e.stopPropagation()}>
-        {urls.map((u) => (
-          <div className="viewerSlide" key={u}>
-            <img className="viewerImg" src={u} alt="" />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PhotoBoxSquare({ urls, onOpenViewer }) {
-  return (
-    <div
-      className="pMedia"
-      role="button"
-      onClick={urls?.length ? onOpenViewer : undefined}
-      style={{ cursor: urls?.length ? "pointer" : "default" }}
-    >
-      <div className="pMediaRow">
-        {urls?.length ? (
-          urls.map((u) => (
-            <div className="pMediaSlide" key={u}>
-              <img className="pMediaImg" src={u} alt="" />
-            </div>
-          ))
-        ) : (
-          <div className="pMediaEmpty">
-            <div className="pMediaIcon" />
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ShipmentCard({ ev, onStartTransit, onRefused, onReceived, onOpenViewer, busy }) {
-  const it = ev.items;
-  const meta = ev.meta || {};
-
-  // Фото: спочатку зі складу, потім (в кінці) фото додані при відправленні
-  const itemUrls = (it?.photo_paths ?? [])
-    .map((p) => normalizeItemPhotoPath(it.id, p))
-    .filter(Boolean)
-    .map(getPublicPhotoUrl);
-
-  const shipUrls = (meta.photo_paths ?? []).map(getPublicPhotoUrl);
-  const urls = uniq([...itemUrls, ...shipUrls]);
-
-  const status = ev.status; // waiting | in_transit | ...
-  const title = `${it?.title ?? "Товар"}${it?.size ? ` • ${it.size}` : ""}`;
-
-  const pill =
-    status === "waiting"
-      ? { text: "очікування", bg: "rgba(37,99,235,.10)", br: "rgba(37,99,235,.18)", dot: "#2563eb", col: "#1d4ed8" }
-      : { text: "в дорозі", bg: "rgba(245,158,11,.12)", br: "rgba(245,158,11,.18)", dot: "#f59e0b", col: "#92400E" };
-
-  return (
-    <div className="pCard">
-      <div className="pBadges">
-        <div className="pBadge left">Відправлення</div>
-        <div className="pBadge right warn">x{ev.qty}</div>
-      </div>
-
-      <PhotoBoxSquare urls={urls} onOpenViewer={onOpenViewer} />
-
-      <div className="pBody">
-        <div className="pTitle" style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <span style={{ color: "#1d4ed8", display: "grid", placeItems: "center" }}><IconTruck /></span>
-          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {title}
-          </span>
-        </div>
-
-        <div className="pSub">
-          {meta.city ? `${meta.city}${meta.branch ? ` • Відд. ${meta.branch}` : ""}` : "—"}
-        </div>
-
-        <div className="pInfoRow" style={{ marginTop: 10 }}>
-          <div className="pInfo">
-            <div className="pInfoLabel">Клієнт</div>
-            <div className="pInfoValue" style={{ fontSize: 13 }}>{meta.full_name || "—"}</div>
-            <div className="pInfoSmall">{meta.phone || ""}</div>
-          </div>
-
-          <div className="pInfo">
-            <div className="pInfoLabel">Адреса</div>
-            <div className="pInfoValue" style={{ fontSize: 13 }}>{meta.city || "—"}</div>
-            <div className="pInfoSmall">{meta.branch ? `Відділення: ${meta.branch}` : ""}</div>
-          </div>
-        </div>
-
-        <div className="pFooter" style={{ marginTop: 12, alignItems: "center" }}>
-          {status === "waiting" ? (
-            <button className="shipStatusBtn" type="button" onClick={() => onStartTransit(ev.id)} disabled={busy}>
-              Відправлено
-            </button>
-          ) : (
-            <div className="shipActions">
-              <button className="shipBtnDanger" type="button" onClick={() => onRefused(ev.id)} disabled={busy}>
-                <IconX /> Відмова
-              </button>
-              <button className="shipBtnSuccess" type="button" onClick={() => onReceived(ev.id)} disabled={busy}>
-                <IconCheck /> Отримано
-              </button>
-            </div>
-          )}
-
-          <div className="pStockPill" style={{ background: pill.bg, borderColor: pill.br, color: pill.col }}>
-            <span className="dot" style={{ background: pill.dot }} />
-            <span>{pill.text}</span>
-          </div>
-        </div>
-
-        <div className="shipMetaLine">
-          <span>{it?.sku ? `SKU-${it.sku}` : ""}</span>
-          <span>{new Date(ev.created_at).toLocaleString()}</span>
-        </div>
-      </div>
-    </div>
-  );
+function statusLabel(st) {
+  if (st === "waiting") return { text: "Очікування", tone: "blue" };
+  if (st === "in_transit") return { text: "В дорозі", tone: "amber" };
+  return { text: st || "—", tone: "gray" };
 }
 
 export default function Home() {
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState(null);
   const [err, setErr] = useState("");
+
   const [q, setQ] = useState("");
 
+  const [stats, setStats] = useState({
+    stock_value: 0,
+    potential_profit: 0,
+    units_in_stock: 0,
+    positions_count: 0,
+    open_shipments: 0,
+    shipments_all_time: 0,
+  });
+
   const [shipments, setShipments] = useState([]);
+  const [openId, setOpenId] = useState(null);
+  const [busyId, setBusyId] = useState(null);
 
-  // viewer
-  const [viewerOpen, setViewerOpen] = useState(false);
-  const [viewerUrls, setViewerUrls] = useState([]);
-  const [viewerIndex, setViewerIndex] = useState(0);
+  async function loadStats() {
+    // dashboard_stats
+    const { data: d1, error: e1 } = await db.from("dashboard_stats").select("*").single();
+    if (!e1 && d1) {
+      setStats((s) => ({
+        ...s,
+        stock_value: d1.stock_value ?? 0,
+        potential_profit: d1.potential_profit ?? 0,
+        units_in_stock: d1.units_in_stock ?? 0,
+        positions_count: d1.positions_count ?? 0,
+      }));
+    }
 
-  async function load() {
+    // shipment_stats
+    const { data: d2, error: e2 } = await db.from("shipment_stats").select("*").single();
+    if (!e2 && d2) {
+      setStats((s) => ({
+        ...s,
+        open_shipments: d2.open_shipments ?? 0,
+        shipments_all_time: d2.shipments_all_time ?? 0,
+      }));
+    }
+  }
+
+  async function loadShipments() {
+    const { data, error } = await db
+      .from("item_events")
+      .select(
+        "id, qty, created_at, status, meta, items(id, title, sku, size, color, photo_paths)"
+      )
+      .eq("type", "ship")
+      .in("status", ["waiting", "in_transit"])
+      .order("created_at", { ascending: false })
+      .limit(300);
+
+    if (error) throw error;
+    setShipments(data ?? []);
+  }
+
+  async function loadAll() {
     setLoading(true);
     setErr("");
     try {
-      const { data, error } = await db
-        .from("item_events")
-        .select("id, qty, created_at, status, meta, items(id, title, size, sku, photo_paths)")
-        .eq("type", "ship")
-        .in("status", ["waiting", "in_transit"])
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      setShipments(data ?? []);
+      await Promise.all([loadStats(), loadShipments()]);
     } catch (e) {
-      setErr(e?.message ?? "Помилка завантаження доставок");
+      setErr(e?.message ?? "Помилка завантаження");
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    loadAll();
+  }, []);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return shipments;
-    return shipments.filter((x) => {
-      const it = x.items;
-      const m = x.meta || {};
-      return `${it?.title ?? ""} ${it?.sku ?? ""} ${it?.size ?? ""} ${m.full_name ?? ""} ${m.phone ?? ""} ${m.city ?? ""} ${m.branch ?? ""}`
-        .toLowerCase()
-        .includes(s);
+
+    return shipments.filter((ev) => {
+      const it = ev.items;
+      const m = ev.meta || {};
+      const color = m.color ?? it?.color ?? "";
+      const size = m.size ?? it?.size ?? "";
+      const hay = `${m.full_name ?? ""} ${m.phone ?? ""} ${it?.title ?? ""} ${it?.sku ?? ""} ${color} ${size} ${m.city ?? ""} ${m.branch ?? ""}`
+        .toLowerCase();
+      return hay.includes(s);
     });
   }, [shipments, q]);
-
-  function openViewer(urls, start = 0) {
-    setViewerUrls(urls);
-    setViewerIndex(start);
-    setViewerOpen(true);
-  }
 
   async function startTransit(id) {
     setErr("");
@@ -260,7 +128,7 @@ export default function Home() {
       const { error } = await db.rpc("shipment_mark_in_transit", { p_ship_event_id: id });
       if (error) throw error;
 
-      // швидко оновимо локально, щоб не чекати повного reload
+      // локально оновимо
       setShipments((prev) => prev.map((x) => (x.id === id ? { ...x, status: "in_transit" } : x)));
     } catch (e) {
       setErr(e?.message ?? "Помилка: Відправлено");
@@ -275,7 +143,8 @@ export default function Home() {
     try {
       const { error } = await db.rpc("shipment_received", { p_ship_event_id: id });
       if (error) throw error;
-      await load();
+      // після отримання ця доставка зникне з Home (бо status=received)
+      await loadAll();
     } catch (e) {
       setErr(e?.message ?? "Помилка: Отримано");
     } finally {
@@ -289,7 +158,7 @@ export default function Home() {
     try {
       const { error } = await db.rpc("shipment_refused", { p_ship_event_id: id });
       if (error) throw error;
-      await load();
+      await loadAll();
     } catch (e) {
       setErr(e?.message ?? "Помилка: Відмова");
     } finally {
@@ -299,53 +168,163 @@ export default function Home() {
 
   return (
     <section>
-      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+      {/* TOP: 2 big blocks */}
+      <div className="homeTop2">
+        <div className="homeMetric">
+          <div className="homeMetricLabel">Вартість складу</div>
+          <div className="homeMetricValue">₴ {money(stats.stock_value)}</div>
+          <div className="homeMetricHint">Сума (шт * собівартість)</div>
+        </div>
+
+        <div className="homeMetric">
+          <div className="homeMetricLabel">Можливий прибуток</div>
+          <div className="homeMetricValue">₴ {money(stats.potential_profit)}</div>
+          <div className="homeMetricHint">Сума (шт * (ціна - собів.))</div>
+        </div>
+      </div>
+
+      {/* SECOND ROW: info chips */}
+      <div className="homeTop3">
+        <div className="homeChip">
+          <span>Активні відправлення</span>
+          <b>{stats.open_shipments}</b>
+        </div>
+        <div className="homeChip">
+          <span>Товару на складі (шт)</span>
+          <b>{stats.units_in_stock}</b>
+        </div>
+        <div className="homeChip">
+          <span>Відправлень за весь час</span>
+          <b>{stats.shipments_all_time}</b>
+        </div>
+      </div>
+
+      <div className="homeTools">
         <input
           className="input"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Пошук доставок: ПІБ / телефон / товар / місто..."
+          placeholder="Пошук: ПІБ / телефон / колір / розмір / товар..."
           style={{ flex: "1 1 260px" }}
         />
-        <button className="btnSecondary" onClick={load} type="button">Оновити</button>
+        <button className="btnSecondary" type="button" onClick={loadAll}>
+          Оновити
+        </button>
       </div>
 
       {err ? <div className="errorBox">{err}</div> : null}
       {loading ? <p style={{ marginTop: 10 }}>Завантаження...</p> : null}
 
-      <div className="premiumGrid" style={{ marginTop: 14 }}>
+      {/* SHIPMENT TILES */}
+      <div className="shipTiles">
         {filtered.map((ev) => {
           const it = ev.items;
-          const meta = ev.meta || {};
+          const m = ev.meta || {};
 
+          const color = m.color ?? it?.color ?? "—";
+          const size = m.size ?? it?.size ?? "—";
+
+          const st = statusLabel(ev.status);
+          const isOpen = openId === ev.id;
+
+          // фото: спочатку зі складу, потім відправлення
           const itemUrls = (it?.photo_paths ?? [])
             .map((p) => normalizeItemPhotoPath(it.id, p))
             .filter(Boolean)
             .map(getPublicPhotoUrl);
 
-          const shipUrls = (meta.photo_paths ?? []).map(getPublicPhotoUrl);
+          const shipPaths = Array.isArray(m.photo_paths) ? m.photo_paths : [];
+          const shipUrls = shipPaths.map(getPublicPhotoUrl);
+
           const urls = uniq([...itemUrls, ...shipUrls]);
 
           return (
-            <ShipmentCard
-              key={ev.id}
-              ev={ev}
-              busy={busyId === ev.id}
-              onStartTransit={startTransit}
-              onRefused={markRefused}
-              onReceived={markReceived}
-              onOpenViewer={() => openViewer(urls, 0)}
-            />
+            <div key={ev.id} className={`shipTile ${isOpen ? "open" : ""}`}>
+              <button
+                type="button"
+                className="shipTileHead"
+                onClick={() => setOpenId((prev) => (prev === ev.id ? null : ev.id))}
+              >
+                <div className="shipTileLeft">
+                  <div className={`shipPill ${st.tone}`}>{st.text}</div>
+                  <div className="shipName">{m.full_name || "—"}</div>
+                  <div className="shipPhone">{m.phone || ""}</div>
+                </div>
+
+                <div className="shipTileRight">
+                  <div className="shipSpec">
+                    <span>Колір:</span> <b>{color}</b>
+                  </div>
+                  <div className="shipSpec">
+                    <span>Розмір:</span> <b>{size}</b>
+                  </div>
+                  <div className="shipSpec">
+                    <span>К-сть:</span> <b>{ev.qty}</b>
+                  </div>
+                </div>
+              </button>
+
+              {isOpen ? (
+                <div className="shipTileBody">
+                  <div className="shipFullInfo">
+                    <div className="shipFullTitle">
+                      {it?.title || "Товар"} {it?.sku ? `• SKU-${it.sku}` : ""}
+                    </div>
+
+                    <div className="shipFullGrid">
+                      <div><b>Місто:</b> {m.city || "—"}</div>
+                      <div><b>Відділення:</b> {m.branch || "—"}</div>
+                      <div><b>Дата/час:</b> {new Date(ev.created_at).toLocaleString()}</div>
+                    </div>
+
+                    <div className="shipActionsRow">
+                      {ev.status === "waiting" ? (
+                        <button
+                          className="btn"
+                          type="button"
+                          onClick={() => startTransit(ev.id)}
+                          disabled={busyId === ev.id}
+                        >
+                          {busyId === ev.id ? "..." : "Відправлено"}
+                        </button>
+                      ) : (
+                        <>
+                          <button
+                            className="shipBtnDanger"
+                            type="button"
+                            onClick={() => markRefused(ev.id)}
+                            disabled={busyId === ev.id}
+                          >
+                            Відмова
+                          </button>
+                          <button
+                            className="shipBtnSuccess"
+                            type="button"
+                            onClick={() => markReceived(ev.id)}
+                            disabled={busyId === ev.id}
+                          >
+                            Отримано
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="shipPhotosCol">
+                    {urls.length ? (
+                      urls.map((u) => (
+                        <img key={u} className="shipPhotoFull" src={u} alt="" loading="lazy" />
+                      ))
+                    ) : (
+                      <div className="shipNoPhotos">Нема фото</div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           );
         })}
       </div>
-
-      <PhotoViewer
-        open={viewerOpen}
-        urls={viewerUrls}
-        startIndex={viewerIndex}
-        onClose={() => setViewerOpen(false)}
-      />
     </section>
   );
 }
