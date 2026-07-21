@@ -1199,4 +1199,107 @@ html, body { overscroll-behavior: none; }
 .shipFullGrid{
   margin-top: 8px;
   display:grid;
-  gap: 
+  gap: 6px;
+  font-size: 13px;
+  color: rgba(11,18,32,.78);
+}
+.shipActionsRow{
+  margin-top: 10px;
+  display:flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.shipPhotosCol{
+  display:grid;
+  gap: 10px;
+}
+.shipPhotoFull{
+  width: 100%;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: #f3f4f6;
+  object-fit: cover;
+}
+.shipNoPhotos{ color: rgba(11,18,32,.55); font-weight: 800; font-size: 13px; }
+
+/* Premium buttons / footer layout */
+.modalFooter{ display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+.modalFooterSplit{ width:100%; display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+.modalFooterRight{ display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+
+@media (max-width: 520px){
+  .modalFooterSplit{ display:grid; grid-template-columns: 1fr; }
+  .modalFooterRight{ display:grid; grid-template-columns: 1fr; }
+}
+
+/* icon delete */
+.iconDanger{
+  width:44px; height:44px;
+  border-radius:14px;
+  border:1px solid rgba(239,68,68,.25);
+  background:rgba(239,68,68,.10);
+  color:#991B1B;
+  display:grid; place-items:center;
+  cursor:pointer;
+}
+
+/* Group card button */
+.pCardBtn{ text-align:left; border:0; padding:0; cursor:pointer; }
+.pCardBtn:active{ transform: translateY(1px); }
+
+/* Ensure photo is cropped in square block */
+.pMedia{ width:100%; aspect-ratio:1/1; background: rgba(11,18,32,.03); }
+.pMediaImg{ width:100%; height:100%; object-fit:cover; display:block; } /* <-- crop */
+
+/* Variants list */
+.variantList{ display:grid; gap:10px; }
+.variantRow{
+  border:1px solid var(--border);
+  border-radius:16px;
+  background:#fff;
+  box-shadow: var(--shadow2);
+  padding: 12px;
+  display:flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.variantTitle{ font-size: 14px; }
+.variantMeta{ margin-top:6px; display:flex; gap:12px; flex-wrap:wrap; font-size:12px; color: rgba(11,18,32,.65); }
+.variantActions{ display:flex; gap:8px; align-items:center; }
+
+.hintTiny{ font-size:12px; color: rgba(11,18,32,.55); font-weight:800; }
+
+/* Thin tiles on Home (not expanding) */
+.shipTileHeadOnly{
+  width:100%;
+  text-align:left;
+  border:1px solid var(--border);
+  background:#fff;
+  border-radius: 18px;
+  box-shadow: var(--shadow2);
+  padding: 12px 14px;
+  display:flex;
+  justify-content: space-between;
+  gap: 12px;
+  cursor:pointer;
+}
+.shipTileHeadOnly:active{ transform: translateY(1px); }
+
+.shipTileLeft{ min-width:0; display:grid; gap:4px; }
+.shipTileRight{ display:grid; gap:2px; text-align:right; }
+.shipName{ font-weight:950; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.shipPhone{ color: var(--muted); font-size:12px; font-weight:800; }
+.shipSpec{ font-size:12px; color: rgba(11,18,32,.66); }
+.shipSpec b{ color: var(--text); font-weight:950; }
+
+.shipPill{
+  display:inline-flex; align-items:center;
+  height:24px; padding:0 10px;
+  border-radius:999px;
+  font-size:12px; font-weight:950;
+  width: fit-content;
+  border:1px solid rgba(11,18,32,.10);
+}
+.shipPill.blue{ background: rgba(37,99,235,.10); border-color: rgba(37,99,235,.18); color:#1d4ed8; }
+.shipPill.amber{ background: rgba(245,158,11,.12); border-color: rgba(245,158,11,.18); color:#92400E; }
+.shipPill.gray{ background: rgba(11,18,32,.06); border-color: rgba(11,18,32,.10); color: rgba(11,18,32,.75); }

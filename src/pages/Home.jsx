@@ -8,7 +8,6 @@ function normalizeItemPhotoPath(itemId, p) {
   if (s.includes("/")) return s;
   return `${itemId}/${s}`;
 }
-
 function uniq(arr) {
   const seen = new Set();
   const out = [];
@@ -20,16 +19,33 @@ function uniq(arr) {
   }
   return out;
 }
-
 function money(n) {
   const v = Number(n || 0);
   return v.toLocaleString("uk-UA", { maximumFractionDigits: 2 });
 }
-
 function statusLabel(st) {
   if (st === "waiting") return { text: "Очікування", tone: "blue" };
   if (st === "in_transit") return { text: "В дорозі", tone: "amber" };
   return { text: st || "—", tone: "gray" };
+}
+
+function Modal({ open, onClose, title, subtitle, children, footer }) {
+  if (!open) return null;
+  return (
+    <div className="modalOverlay" onClick={onClose}>
+      <div className="modal modern" onClick={(e) => e.stopPropagation()}>
+        <div className="modalHeader">
+          <div>
+            <div className="modalTitle">{title}</div>
+            {subtitle ? <div className="modalSubtitle">{subtitle}</div> : null}
+          </div>
+          <button className="iconBtn" type="button" onClick={onClose}>✕</button>
+        </div>
+        <div className="modalBody">{children}</div>
+        {footer ? <div className="modalFooter">{footer}</div> : null}
+      </div>
+    </div>
+  );
 }
 
 export default function Home() {
@@ -48,39 +64,30 @@ export default function Home() {
   });
 
   const [shipments, setShipments] = useState([]);
-  const [openId, setOpenId] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
-  async function loadStats() {
-    // dashboard_stats
-    const { data: d1, error: e1 } = await db.from("dashboard_stats").select("*").single();
-    if (!e1 && d1) {
-      setStats((s) => ({
-        ...s,
-        stock_value: d1.stock_value ?? 0,
-        potential_profit: d1.potential_profit ?? 0,
-        units_in_stock: d1.units_in_stock ?? 0,
-        positions_count: d1.positions_count ?? 0,
-      }));
-    }
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(null);
 
-    // shipment_stats
-    const { data: d2, error: e2 } = await db.from("shipment_stats").select("*").single();
-    if (!e2 && d2) {
-      setStats((s) => ({
-        ...s,
-        open_shipments: d2.open_shipments ?? 0,
-        shipments_all_time: d2.shipments_all_time ?? 0,
-      }));
-    }
+  async function loadStats() {
+    const { data: d1 } = await db.from("dashboard_stats").select("*").single();
+    const { data: d2 } = await db.from("shipment_stats").select("*").single();
+
+    setStats((s) => ({
+      ...s,
+      stock_value: d1?.stock_value ?? 0,
+      potential_profit: d1?.potential_profit ?? 0,
+      units_in_stock: d1?.units_in_stock ?? 0,
+      positions_count: d1?.positions_count ?? 0,
+      open_shipments: d2?.open_shipments ?? 0,
+      shipments_all_time: d2?.shipments_all_time ?? 0,
+    }));
   }
 
   async function loadShipments() {
     const { data, error } = await db
       .from("item_events")
-      .select(
-        "id, qty, created_at, status, meta, items(id, title, sku, size, color, photo_paths)"
-      )
+      .select("id, qty, created_at, status, meta, items(id, title, sku, size, color, photo_paths)")
       .eq("type", "ship")
       .in("status", ["waiting", "in_transit"])
       .order("created_at", { ascending: false })
@@ -109,17 +116,20 @@ export default function Home() {
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return shipments;
-
     return shipments.filter((ev) => {
       const it = ev.items;
       const m = ev.meta || {};
       const color = m.color ?? it?.color ?? "";
       const size = m.size ?? it?.size ?? "";
-      const hay = `${m.full_name ?? ""} ${m.phone ?? ""} ${it?.title ?? ""} ${it?.sku ?? ""} ${color} ${size} ${m.city ?? ""} ${m.branch ?? ""}`
-        .toLowerCase();
+      const hay = `${m.full_name ?? ""} ${m.phone ?? ""} ${color} ${size} ${it?.title ?? ""} ${it?.sku ?? ""}`.toLowerCase();
       return hay.includes(s);
     });
   }, [shipments, q]);
+
+  function openShipment(ev) {
+    setActive(ev);
+    setOpen(true);
+  }
 
   async function startTransit(id) {
     setErr("");
@@ -127,9 +137,8 @@ export default function Home() {
     try {
       const { error } = await db.rpc("shipment_mark_in_transit", { p_ship_event_id: id });
       if (error) throw error;
-
-      // локально оновимо
       setShipments((prev) => prev.map((x) => (x.id === id ? { ...x, status: "in_transit" } : x)));
+      setActive((a) => (a?.id === id ? { ...a, status: "in_transit" } : a));
     } catch (e) {
       setErr(e?.message ?? "Помилка: Відправлено");
     } finally {
@@ -143,7 +152,8 @@ export default function Home() {
     try {
       const { error } = await db.rpc("shipment_received", { p_ship_event_id: id });
       if (error) throw error;
-      // після отримання ця доставка зникне з Home (бо status=received)
+      setOpen(false);
+      setActive(null);
       await loadAll();
     } catch (e) {
       setErr(e?.message ?? "Помилка: Отримано");
@@ -158,6 +168,8 @@ export default function Home() {
     try {
       const { error } = await db.rpc("shipment_refused", { p_ship_event_id: id });
       if (error) throw error;
+      setOpen(false);
+      setActive(null);
       await loadAll();
     } catch (e) {
       setErr(e?.message ?? "Помилка: Відмова");
@@ -166,165 +178,133 @@ export default function Home() {
     }
   }
 
+  const activeUrls = useMemo(() => {
+    if (!active) return [];
+    const it = active.items;
+    const m = active.meta || {};
+
+    const itemUrls = (it?.photo_paths ?? [])
+      .map((p) => normalizeItemPhotoPath(it.id, p))
+      .filter(Boolean)
+      .map(getPublicPhotoUrl);
+
+    const shipPaths = Array.isArray(m.photo_paths) ? m.photo_paths : [];
+    const shipUrls = shipPaths.map(getPublicPhotoUrl);
+
+    return uniq([...itemUrls, ...shipUrls]); // спочатку склад, потім відправлення
+  }, [active]);
+
   return (
     <section>
-      {/* TOP: 2 big blocks */}
+      {/* premium top */}
       <div className="homeTop2">
         <div className="homeMetric">
           <div className="homeMetricLabel">Вартість складу</div>
           <div className="homeMetricValue">₴ {money(stats.stock_value)}</div>
-          <div className="homeMetricHint">Сума (шт * собівартість)</div>
+          <div className="homeMetricHint">шт * собівартість</div>
         </div>
-
         <div className="homeMetric">
           <div className="homeMetricLabel">Можливий прибуток</div>
           <div className="homeMetricValue">₴ {money(stats.potential_profit)}</div>
-          <div className="homeMetricHint">Сума (шт * (ціна - собів.))</div>
+          <div className="homeMetricHint">шт * (ціна - собів.)</div>
         </div>
       </div>
 
-      {/* SECOND ROW: info chips */}
       <div className="homeTop3">
-        <div className="homeChip">
-          <span>Активні відправлення</span>
-          <b>{stats.open_shipments}</b>
-        </div>
-        <div className="homeChip">
-          <span>Товару на складі (шт)</span>
-          <b>{stats.units_in_stock}</b>
-        </div>
-        <div className="homeChip">
-          <span>Відправлень за весь час</span>
-          <b>{stats.shipments_all_time}</b>
-        </div>
+        <div className="homeChip"><span>Активні відправлення</span><b>{stats.open_shipments}</b></div>
+        <div className="homeChip"><span>Товару на складі (шт)</span><b>{stats.units_in_stock}</b></div>
+        <div className="homeChip"><span>Відправлень за весь час</span><b>{stats.shipments_all_time}</b></div>
       </div>
 
       <div className="homeTools">
-        <input
-          className="input"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Пошук: ПІБ / телефон / колір / розмір / товар..."
-          style={{ flex: "1 1 260px" }}
-        />
-        <button className="btnSecondary" type="button" onClick={loadAll}>
-          Оновити
-        </button>
+        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Пошук: ПІБ / телефон / колір / розмір..." style={{ flex: "1 1 260px" }} />
+        <button className="btnSecondary" type="button" onClick={loadAll}>Оновити</button>
       </div>
 
       {err ? <div className="errorBox">{err}</div> : null}
       {loading ? <p style={{ marginTop: 10 }}>Завантаження...</p> : null}
 
-      {/* SHIPMENT TILES */}
+      {/* thin tiles */}
       <div className="shipTiles">
         {filtered.map((ev) => {
           const it = ev.items;
           const m = ev.meta || {};
-
           const color = m.color ?? it?.color ?? "—";
           const size = m.size ?? it?.size ?? "—";
-
           const st = statusLabel(ev.status);
-          const isOpen = openId === ev.id;
-
-          // фото: спочатку зі складу, потім відправлення
-          const itemUrls = (it?.photo_paths ?? [])
-            .map((p) => normalizeItemPhotoPath(it.id, p))
-            .filter(Boolean)
-            .map(getPublicPhotoUrl);
-
-          const shipPaths = Array.isArray(m.photo_paths) ? m.photo_paths : [];
-          const shipUrls = shipPaths.map(getPublicPhotoUrl);
-
-          const urls = uniq([...itemUrls, ...shipUrls]);
 
           return (
-            <div key={ev.id} className={`shipTile ${isOpen ? "open" : ""}`}>
-              <button
-                type="button"
-                className="shipTileHead"
-                onClick={() => setOpenId((prev) => (prev === ev.id ? null : ev.id))}
-              >
-                <div className="shipTileLeft">
-                  <div className={`shipPill ${st.tone}`}>{st.text}</div>
-                  <div className="shipName">{m.full_name || "—"}</div>
-                  <div className="shipPhone">{m.phone || ""}</div>
-                </div>
-
-                <div className="shipTileRight">
-                  <div className="shipSpec">
-                    <span>Колір:</span> <b>{color}</b>
-                  </div>
-                  <div className="shipSpec">
-                    <span>Розмір:</span> <b>{size}</b>
-                  </div>
-                  <div className="shipSpec">
-                    <span>К-сть:</span> <b>{ev.qty}</b>
-                  </div>
-                </div>
-              </button>
-
-              {isOpen ? (
-                <div className="shipTileBody">
-                  <div className="shipFullInfo">
-                    <div className="shipFullTitle">
-                      {it?.title || "Товар"} {it?.sku ? `• SKU-${it.sku}` : ""}
-                    </div>
-
-                    <div className="shipFullGrid">
-                      <div><b>Місто:</b> {m.city || "—"}</div>
-                      <div><b>Відділення:</b> {m.branch || "—"}</div>
-                      <div><b>Дата/час:</b> {new Date(ev.created_at).toLocaleString()}</div>
-                    </div>
-
-                    <div className="shipActionsRow">
-                      {ev.status === "waiting" ? (
-                        <button
-                          className="btn"
-                          type="button"
-                          onClick={() => startTransit(ev.id)}
-                          disabled={busyId === ev.id}
-                        >
-                          {busyId === ev.id ? "..." : "Відправлено"}
-                        </button>
-                      ) : (
-                        <>
-                          <button
-                            className="shipBtnDanger"
-                            type="button"
-                            onClick={() => markRefused(ev.id)}
-                            disabled={busyId === ev.id}
-                          >
-                            Відмова
-                          </button>
-                          <button
-                            className="shipBtnSuccess"
-                            type="button"
-                            onClick={() => markReceived(ev.id)}
-                            disabled={busyId === ev.id}
-                          >
-                            Отримано
-                          </button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="shipPhotosCol">
-                    {urls.length ? (
-                      urls.map((u) => (
-                        <img key={u} className="shipPhotoFull" src={u} alt="" loading="lazy" />
-                      ))
-                    ) : (
-                      <div className="shipNoPhotos">Нема фото</div>
-                    )}
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            <button key={ev.id} type="button" className="shipTileHeadOnly" onClick={() => openShipment(ev)}>
+              <div className="shipTileLeft">
+                <div className={`shipPill ${st.tone}`}>{st.text}</div>
+                <div className="shipName">{m.full_name || "—"}</div>
+                <div className="shipPhone">{m.phone || ""}</div>
+              </div>
+              <div className="shipTileRight">
+                <div className="shipSpec"><span>Колір:</span> <b>{color}</b></div>
+                <div className="shipSpec"><span>Розмір:</span> <b>{size}</b></div>
+                <div className="shipSpec"><span>К-сть:</span> <b>{ev.qty}</b></div>
+              </div>
+            </button>
           );
         })}
       </div>
+
+      {/* details modal */}
+      <Modal
+        open={open}
+        onClose={() => { setOpen(false); setActive(null); }}
+        title="Відправлення"
+        subtitle={active ? new Date(active.created_at).toLocaleString() : ""}
+        footer={
+          active ? (
+            active.status === "waiting" ? (
+              <div className="modalFooterSplit">
+                <button className="btnSecondary" type="button" onClick={() => setOpen(false)}>Закрити</button>
+                <button className="btn" type="button" onClick={() => startTransit(active.id)} disabled={busyId === active.id}>
+                  {busyId === active.id ? "..." : "Відправлено"}
+                </button>
+              </div>
+            ) : (
+              <div className="modalFooterSplit">
+                <button className="btnSecondary" type="button" onClick={() => setOpen(false)}>Закрити</button>
+                <div className="modalFooterRight">
+                  <button className="shipBtnDanger" type="button" onClick={() => markRefused(active.id)} disabled={busyId === active.id}>Відмова</button>
+                  <button className="shipBtnSuccess" type="button" onClick={() => markReceived(active.id)} disabled={busyId === active.id}>Отримано</button>
+                </div>
+              </div>
+            )
+          ) : null
+        }
+      >
+        {active ? (
+          <>
+            <div className="detailBlock">
+              <div className="detailBlockTitle">{active.items?.title || "Товар"}</div>
+              <div className="detailLine"><b>ПІБ:</b> {active.meta?.full_name || "—"}</div>
+              <div className="detailLine"><b>Тел:</b> {active.meta?.phone || "—"}</div>
+              <div className="detailLine"><b>Місто:</b> {active.meta?.city || "—"}</div>
+              <div className="detailLine"><b>Відділення:</b> {active.meta?.branch || "—"}</div>
+              <div className="detailLine"><b>Колір:</b> {active.meta?.color ?? active.items?.color ?? "—"}</div>
+              <div className="detailLine"><b>Розмір:</b> {active.meta?.size ?? active.items?.size ?? "—"}</div>
+              <div className="detailLine"><b>К-сть:</b> {active.qty}</div>
+            </div>
+
+            <div className="detailBlock">
+              <div className="detailBlockTitle">Фото</div>
+              {activeUrls.length ? (
+                <div className="detailPhotos">
+                  {activeUrls.map((u) => (
+                    <img key={u} src={u} alt="" className="detailPhoto" loading="lazy" />
+                  ))}
+                </div>
+              ) : (
+                <div style={{ color: "rgba(11,18,32,.55)" }}>Нема фото</div>
+              )}
+            </div>
+          </>
+        ) : null}
+      </Modal>
     </section>
   );
 }
