@@ -591,7 +591,7 @@ export default function Stock() {
         color: shipVariant.color ?? null,
         size: shipVariant.size ?? null,
         sku: shipVariant.sku ?? null,
-        photo_paths: uniq([...(meta.photo_paths ?? []), ...uploaded]),
+        ship_photo_paths: uniq([...(meta.ship_photo_paths ?? []), ...uploaded]),
       };
 
       const { error: e2 } = await db.from("item_events").update({ meta: nextMeta }).eq("id", eventId);

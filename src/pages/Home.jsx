@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../services/supabase";
 import { getPublicPhotoUrl } from "../services/photos";
 
@@ -48,17 +48,56 @@ function Modal({ open, onClose, title, subtitle, children, footer }) {
   );
 }
 
+function PhotoViewer({ open, urls, startIndex, onClose }) {
+  const rowRef = useRef(null);
+  const [idx, setIdx] = useState(startIndex ?? 0);
+
+  useEffect(() => {
+    if (!open) return;
+    setIdx(startIndex ?? 0);
+    requestAnimationFrame(() => {
+      const el = rowRef.current;
+      if (!el) return;
+      const slide = el.children[startIndex ?? 0];
+      slide?.scrollIntoView?.({ behavior: "instant", inline: "start" });
+    });
+  }, [open, startIndex, urls?.length]);
+
+  function onScroll() {
+    const el = rowRef.current;
+    if (!el) return;
+    const w = el.clientWidth || 1;
+    setIdx(Math.round(el.scrollLeft / w));
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="viewerOverlay" onClick={onClose}>
+      <div className="viewerTop" onClick={(e) => e.stopPropagation()}>
+        <div className="viewerCount">{urls?.length ? `${idx + 1} / ${urls.length}` : ""}</div>
+        <button className="viewerClose" type="button" onClick={onClose}>Закрити</button>
+      </div>
+      <div className="viewerRow" ref={rowRef} onScroll={onScroll} onClick={(e) => e.stopPropagation()}>
+        {urls.map((u) => (
+          <div className="viewerSlide" key={u}>
+            <img className="viewerImg" src={u} alt="" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
-
   const [q, setQ] = useState("");
 
   const [stats, setStats] = useState({
     stock_value: 0,
     potential_profit: 0,
     units_in_stock: 0,
-    positions_count: 0,
     open_shipments: 0,
     shipments_all_time: 0,
   });
@@ -69,19 +108,22 @@ export default function Home() {
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(null);
 
+  // viewer
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerUrls, setViewerUrls] = useState([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+
   async function loadStats() {
     const { data: d1 } = await db.from("dashboard_stats").select("*").single();
     const { data: d2 } = await db.from("shipment_stats").select("*").single();
 
-    setStats((s) => ({
-      ...s,
+    setStats({
       stock_value: d1?.stock_value ?? 0,
       potential_profit: d1?.potential_profit ?? 0,
       units_in_stock: d1?.units_in_stock ?? 0,
-      positions_count: d1?.positions_count ?? 0,
       open_shipments: d2?.open_shipments ?? 0,
       shipments_all_time: d2?.shipments_all_time ?? 0,
-    }));
+    });
   }
 
   async function loadShipments() {
@@ -109,9 +151,7 @@ export default function Home() {
     }
   }
 
-  useEffect(() => {
-    loadAll();
-  }, []);
+  useEffect(() => { loadAll(); }, []);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -188,15 +228,24 @@ export default function Home() {
       .filter(Boolean)
       .map(getPublicPhotoUrl);
 
-    const shipPaths = Array.isArray(m.photo_paths) ? m.photo_paths : [];
+    // НОВЕ: читаємо тільки ship_photo_paths (але підтримуємо старе meta.photo_paths якщо було)
+    const shipPaths =
+      Array.isArray(m.ship_photo_paths) ? m.ship_photo_paths :
+      Array.isArray(m.photo_paths) ? m.photo_paths : [];
+
     const shipUrls = shipPaths.map(getPublicPhotoUrl);
 
-    return uniq([...itemUrls, ...shipUrls]); // спочатку склад, потім відправлення
+    return uniq([...itemUrls, ...shipUrls]);
   }, [active]);
+
+  function openViewer(urls, start = 0) {
+    setViewerUrls(urls);
+    setViewerIndex(start);
+    setViewerOpen(true);
+  }
 
   return (
     <section>
-      {/* premium top */}
       <div className="homeTop2">
         <div className="homeMetric">
           <div className="homeMetricLabel">Вартість складу</div>
@@ -224,7 +273,6 @@ export default function Home() {
       {err ? <div className="errorBox">{err}</div> : null}
       {loading ? <p style={{ marginTop: 10 }}>Завантаження...</p> : null}
 
-      {/* thin tiles */}
       <div className="shipTiles">
         {filtered.map((ev) => {
           const it = ev.items;
@@ -250,7 +298,6 @@ export default function Home() {
         })}
       </div>
 
-      {/* details modal */}
       <Modal
         open={open}
         onClose={() => { setOpen(false); setActive(null); }}
@@ -291,11 +338,19 @@ export default function Home() {
             </div>
 
             <div className="detailBlock">
-              <div className="detailBlockTitle">Фото</div>
+              <div className="detailBlockTitle">Фото (натисни щоб відкрити)</div>
               {activeUrls.length ? (
                 <div className="detailPhotos">
-                  {activeUrls.map((u) => (
-                    <img key={u} src={u} alt="" className="detailPhoto" loading="lazy" />
+                  {activeUrls.map((u, idx) => (
+                    <img
+                      key={u}
+                      src={u}
+                      alt=""
+                      className="detailPhoto"
+                      loading="lazy"
+                      onClick={() => openViewer(activeUrls, idx)}
+                      style={{ cursor: "pointer" }}
+                    />
                   ))}
                 </div>
               ) : (
@@ -305,6 +360,13 @@ export default function Home() {
           </>
         ) : null}
       </Modal>
+
+      <PhotoViewer
+        open={viewerOpen}
+        urls={viewerUrls}
+        startIndex={viewerIndex}
+        onClose={() => setViewerOpen(false)}
+      />
     </section>
   );
 }
