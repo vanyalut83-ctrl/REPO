@@ -1708,3 +1708,74 @@ body{ background: var(--bg); color: var(--text); }
 .photoRemove{
   border-radius: 14px;
 }
+
+/* компактний блок фото в модалках */
+.photoBox{
+  margin-top: 10px;
+  margin-bottom: 10px;
+
+  width: 100%;
+  height: 140px;              /* було 210px -> компактніше */
+
+  border-radius: 18px;
+  border: 1px solid var(--border);
+  background: #fff;
+  box-shadow: var(--shadow2);
+  overflow: hidden;
+}
+
+/* внутрішній ряд */
+.photoRow{
+  height: 100%;
+  padding: 10px;
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  align-items: stretch;
+
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+
+  scrollbar-width: none;
+}
+.photoRow::-webkit-scrollbar{ display:none; }
+
+/* слайди */
+.photoSlide,
+.photoAddSmall{
+  height: 100% !important;
+  flex: 0 0 78%;
+  border-radius: 16px;
+  border: 1px solid rgba(11,18,32,.10);
+  background: rgba(11,18,32,.03);
+  overflow: hidden;
+  scroll-snap-align: start;
+}
+
+@media (min-width: 700px){
+  .photoSlide,
+  .photoAddSmall{
+    flex-basis: 300px;
+  }
+}
+
+/* empty state */
+.photoAddBig{
+  height: 100%;
+  width: 100%;
+  border: 1px dashed rgba(11,18,32,.18);
+  border-radius: 16px;
+  background: rgba(37,99,235,.06);
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  padding: 0;
+}
+
+/* картинка */
+.photoImg{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
