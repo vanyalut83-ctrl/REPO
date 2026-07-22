@@ -71,7 +71,7 @@ function IconShip({ size = 18 }) {
   );
 }
 
-function Modal({ open, onClose, title, subtitle, children, footer }) {
+function Modal({ open, onClose, title, subtitle, children, footer, footerClassName = "" }) {
   if (!open) return null;
   return (
     <div className="modalOverlay" onClick={onClose}>
@@ -81,14 +81,16 @@ function Modal({ open, onClose, title, subtitle, children, footer }) {
             <div className="modalTitle">{title}</div>
             {subtitle ? <div className="modalSubtitle">{subtitle}</div> : null}
           </div>
-          <button className="iconBtn" type="button" onClick={onClose}>
-            ✕
-          </button>
+          <button className="iconBtn" type="button" onClick={onClose}>✕</button>
         </div>
 
         <div className="modalBody">{children}</div>
 
-        {footer ? <div className="modalFooter">{footer}</div> : null}
+        {footer ? (
+          <div className={`modalFooter ${footerClassName}`}>
+            {footer}
+          </div>
+        ) : null}
       </div>
     </div>
   );

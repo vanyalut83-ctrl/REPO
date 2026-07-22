@@ -1709,3 +1709,7 @@ body{ background: var(--bg); color: var(--text); }
   border-radius: 14px;
 }
 
+/* підняти кнопки тільки в редагуванні */
+.modalFooter.editFooterLift{
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px) + 14px);
+}
