@@ -90,7 +90,10 @@ export default function History() {
     }
   }
 
-  useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line
+  }, []);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -147,6 +150,7 @@ export default function History() {
         {filtered.map((r) => {
           const b = badge(r);
           const dt = new Date(r.created_at);
+
           return (
             <button
               key={r.event_id}
@@ -167,11 +171,13 @@ export default function History() {
               </div>
 
               <div className="histRow"><span>К-сть</span><b>{r.qty}</b></div>
-              <div className="histRow"><span>Ціна</span><b>₴ {money(r.sale_price)}</b></div>
+              <div className="histRow"><span>Собівартість (сума)</span><b>₴ {money(r.cost_total)}</b></div>
               <div className="histRow"><span>Сума</span><b>₴ {money(r.amount)}</b></div>
               <div className="histRow">
                 <span>Прибуток</span>
-                <b style={{ color: Number(r.profit) >= 0 ? "#067647" : "#991B1B" }}>₴ {money(r.profit)}</b>
+                <b style={{ color: Number(r.profit) >= 0 ? "#067647" : "#991B1B" }}>
+                  ₴ {money(r.profit)}
+                </b>
               </div>
 
               <div className="histMini">
@@ -197,13 +203,16 @@ export default function History() {
           {active ? (
             <>
               <div style={{ fontWeight: 950 }}>
-                {active.title}{active.color ? ` • ${active.color}` : ""}{active.size ? ` • ${active.size}` : ""}
+                {active.title}{active.color ? ` • ${active.color}` : ""}{active.size ? ` • ${active.size}` : ""}{active.sku ? ` • SKU-${active.sku}` : ""}
               </div>
 
-              <div className="detailPhotos" style={{ marginTop: 12 }}>
-                {activeUrls.length ? activeUrls.map((u) => (
-                  <img key={u} src={u} alt="" className="detailPhoto" loading="lazy" />
-                )) : <div style={{ color: "rgba(11,18,32,.55)" }}>Нема фото</div>}
+              <div className="detailGrid">
+                <div><span>К-сть</span><b>{active.qty}</b></div>
+                <div><span>Собівартість/шт</span><b>₴ {money(active.cost)}</b></div>
+                <div><span>Ціна/шт</span><b>₴ {money(active.sale_price)}</b></div>
+                <div><span>Собівартість (сума)</span><b>₴ {money(active.cost_total)}</b></div>
+                <div><span>Сума</span><b>₴ {money(active.amount)}</b></div>
+                <div><span>Прибуток</span><b style={{ color: Number(active.profit) >= 0 ? "#067647" : "#991B1B" }}>₴ {money(active.profit)}</b></div>
               </div>
 
               <div className="detailBlock">
@@ -212,6 +221,19 @@ export default function History() {
                 <div className="detailLine"><b>Тел:</b> {active.phone || "—"}</div>
                 <div className="detailLine"><b>Місто:</b> {active.city || "—"}</div>
                 <div className="detailLine"><b>Відділення:</b> {active.branch || "—"}</div>
+              </div>
+
+              <div className="detailBlock">
+                <div className="detailBlockTitle">Фото</div>
+                {activeUrls.length ? (
+                  <div className="detailPhotos">
+                    {activeUrls.map((u) => (
+                      <img key={u} src={u} alt="" className="detailPhoto" loading="lazy" />
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ color: "rgba(11,18,32,.55)" }}>Нема фото</div>
+                )}
               </div>
             </>
           ) : null}

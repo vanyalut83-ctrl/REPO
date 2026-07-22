@@ -1525,3 +1525,29 @@ body{ background: var(--bg); color: var(--text); }
 
 /* prevent accidental tap on swipe */
 .pCardClickable{ cursor: pointer; }
+
+.incomeTop{
+  display:flex;
+  gap:10px;
+  align-items:center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+.incomeCards{
+  margin-top: 12px;
+  display:grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 900px){
+  .incomeCards{ grid-template-columns: 1fr 1fr 1fr; }
+}
+.chartCard{
+  margin-top: 12px;
+  background:#fff;
+  border:1px solid var(--border);
+  border-radius: 18px;
+  box-shadow: var(--shadow2);
+  padding: 14px;
+}
+.chartTitle{ font-weight: 950; margin-bottom: 8px; }
