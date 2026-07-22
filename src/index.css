@@ -1558,7 +1558,7 @@ body{ background: var(--bg); color: var(--text); }
 .pSub{ font-size: 12px; margin-top: 4px; }
 
 /* щоб блок не був "дуже великий" */
-.pMedia{ aspect-ratio: 4 / 3; } /* було 1/1 */
+.pMedia{ aspect-ratio: 1 / 1; } /* було 1/1 */
 .pMediaRow{
   height: 100%;
   display:flex;
@@ -1570,3 +1570,63 @@ body{ background: var(--bg); color: var(--text); }
 .pMediaRow::-webkit-scrollbar{ display:none; }
 .pMediaSlide{ flex: 0 0 100%; scroll-snap-align:start; height:100%; }
 .pMediaImg{ width:100%; height:100%; object-fit:cover; display:block; }
+
+/* FIXED photo add block height (no jump) */
+.photoBox{
+  height: 190px;                 /* фіксована висота */
+  border-radius: 18px;
+  overflow: hidden;
+}
+
+.photoRow{
+  height: 100%;
+  align-items: stretch;
+  padding: 10px;
+}
+
+/* слайд фото */
+.photoSlide,
+.photoAddSmall{
+  height: 100% !important;       /* щоб не було aspect-ratio стрибків */
+  aspect-ratio: auto !important; /* важливо: відключаємо попередні ratio */
+  flex: 0 0 78%;
+  border-radius: 16px;
+}
+
+/* на більших екранах можна трохи ширше */
+@media (min-width: 700px){
+  .photoSlide,
+  .photoAddSmall{
+    flex-basis: 320px;
+  }
+}
+
+/* картинка заповнює блок */
+.photoImg{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* empty state теж на всю висоту */
+.photoAddBig{
+  height: 100%;
+  width: 100%;
+  display: grid;
+  place-items: center;
+  padding: 0;
+}
+
+/* Mobile-friendly page padding */
+.content{
+  padding-left: 14px;
+  padding-right: 14px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+}
+
+@media (max-width: 420px){
+  .content{
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
