@@ -1505,3 +1505,23 @@ body{ background: var(--bg); color: var(--text); }
 }
 .variantThumb img{ width:100%; height:100%; object-fit: cover; display:block; }
 .variantThumbEmpty{ width:100%; height:100%; }
+
+/* swipe photos in stock card */
+.pMediaRow{
+  height: 100%;
+  display: flex;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.pMediaRow::-webkit-scrollbar{ display:none; }
+
+.pMediaSlide{
+  flex: 0 0 100%;
+  height: 100%;
+  scroll-snap-align: start;
+}
+
+/* prevent accidental tap on swipe */
+.pCardClickable{ cursor: pointer; }

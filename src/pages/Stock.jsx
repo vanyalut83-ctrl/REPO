@@ -95,10 +95,23 @@ function Modal({ open, onClose, title, subtitle, children, footer }) {
 }
 
 function PhotoSquare({ urls }) {
-  // свайп по фото на складі
+  const rowRef = useRef(null);
+
+  // важливо: при зміні набору фото завжди стартуємо з першого
+  useEffect(() => {
+    const el = rowRef.current;
+    if (!el) return;
+    el.scrollLeft = 0;
+  }, [urls?.length, urls?.[0]]);
+
   return (
-    <div className="pMedia">
-      <div className="pMediaRow">
+    <div
+      className="pMedia"
+      onPointerDown={(e) => e.stopPropagation()}
+      onPointerUp={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div className="pMediaRow" ref={rowRef}>
         {urls?.length ? (
           urls.map((u) => (
             <div className="pMediaSlide" key={u}>
@@ -121,7 +134,7 @@ function GroupCard({ group, onOpen }) {
   const out = qty === 0;
 
   return (
-    <button type="button" className="pCard pCardBtn" onClick={onOpen}>
+    <div className="pCard pCardClickable" onClick={onOpen} role="button" tabIndex={0}>
       <div className="pBadges">
         <div className="pBadge left">{group.tag}</div>
         {out ? (
@@ -133,7 +146,7 @@ function GroupCard({ group, onOpen }) {
         )}
       </div>
 
-      {/* ГОЛОВНЕ: тут urls = перші фото кожної варіації */}
+      {/* свайп фото тут */}
       <PhotoSquare urls={group.coverUrls} />
 
       <div className="pBody">
@@ -152,7 +165,7 @@ function GroupCard({ group, onOpen }) {
           </div>
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -195,11 +208,9 @@ export default function Stock() {
   const [err, setErr] = useState("");
   const [q, setQ] = useState("");
 
-  // group modal
   const [groupOpen, setGroupOpen] = useState(false);
   const [activeGroup, setActiveGroup] = useState(null);
 
-  // create variant
   const [createOpen, setCreateOpen] = useState(false);
   const [busyCreate, setBusyCreate] = useState(false);
   const [createForm, setCreateForm] = useState({
@@ -216,7 +227,6 @@ export default function Stock() {
   const [createPhotos, setCreatePhotos] = useState([]);
   const createInputRef = useRef(null);
 
-  // edit variant
   const [editOpen, setEditOpen] = useState(false);
   const [busyEdit, setBusyEdit] = useState(false);
   const [busyDelete, setBusyDelete] = useState(false);
@@ -235,7 +245,6 @@ export default function Stock() {
   const [editNewPhotos, setEditNewPhotos] = useState([]);
   const editInputRef = useRef(null);
 
-  // ship
   const [shipOpen, setShipOpen] = useState(false);
   const [busyShip, setBusyShip] = useState(false);
   const [shipVariant, setShipVariant] = useState(null);
@@ -321,18 +330,26 @@ export default function Stock() {
       const qty_in_stock_sum = g.variants.reduce((a, x) => a + (x.qty_in_stock ?? 0), 0);
       const qty_in_delivery_sum = g.variants.reduce((a, x) => a + (x.qty_in_delivery ?? 0), 0);
 
-      // ВАЖЛИВО: перше фото КОЖНОЇ варіації -> список для свайпу в картці
+      // порядок варіацій: по created_at (старіша перша)
+      const variantsSorted = [...g.variants].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+
+      // coverUrls: перше фото кожної варіації
       const coverUrls = uniq(
-        g.variants
-          .map((v) => v.photo_paths?.[0] ? getPublicPhotoUrl(normalizeItemPhotoPath(v.id, v.photo_paths[0])) : null)
+        variantsSorted
+          .map((v) => {
+            const p0 = v.photo_paths?.[0];
+            if (!p0) return null;
+            return getPublicPhotoUrl(normalizeItemPhotoPath(v.id, p0));
+          })
           .filter(Boolean)
       );
 
       out.push({
         ...g,
+        variants: variantsSorted,
         qty_in_stock_sum,
         qty_in_delivery_sum,
-        variantsCount: g.variants.length,
+        variantsCount: variantsSorted.length,
         coverUrls,
       });
     }
@@ -374,7 +391,6 @@ export default function Stock() {
   async function submitCreate(e) {
     e.preventDefault();
     setErr("");
-
     const title = createForm.title.trim();
     if (!title) return setErr("Вкажи назву");
 
@@ -393,13 +409,10 @@ export default function Stock() {
     setBusyCreate(true);
     try {
       const created = await createItem(payload);
-
-      // фото складу тільки тут (і в редагуванні), НЕ в відправленні
       for (const p of createPhotos) {
         const path = await uploadItemPhoto({ itemId: created.id, file: p.file });
         await appendItemPhotoPath(created.id, path);
       }
-
       closeCreate();
       await load();
     } catch (e2) {
@@ -435,7 +448,6 @@ export default function Stock() {
   async function saveEditVariant() {
     if (!activeVariant) return;
     setErr("");
-
     const title = editForm.title.trim();
     if (!title) return setErr("Вкажи назву");
 
@@ -456,7 +468,6 @@ export default function Stock() {
       const { error } = await db.from("items").update(patch).eq("id", activeVariant.id);
       if (error) throw error;
 
-      // фото складу можна редагувати тут
       for (const p of editNewPhotos) {
         const path = await uploadItemPhoto({ itemId: activeVariant.id, file: p.file });
         await appendItemPhotoPath(activeVariant.id, path);
@@ -481,7 +492,6 @@ export default function Stock() {
     try {
       const { error } = await db.from("items").delete().eq("id", activeVariant.id);
       if (error) throw error;
-
       closeEditVariant();
       await load();
     } catch (e) {
@@ -543,11 +553,9 @@ export default function Stock() {
       });
       if (rpcErr) throw rpcErr;
 
-      // upload фото доставки
       const uploaded = [];
       for (const p of shipPhotos) uploaded.push(await uploadShipmentPhoto(eventId, p.file));
 
-      // update meta: ship_photo_paths (НЕ чіпаємо items.photo_paths)
       const { data: row, error: e1 } = await db.from("item_events").select("meta").eq("id", eventId).single();
       if (e1) throw e1;
 
@@ -592,17 +600,15 @@ export default function Stock() {
       <button className="fabAdd" type="button" onClick={() => openCreate({})}>+ Додати</button>
       <div style={{ height: 84 }} />
 
-      {/* hidden inputs */}
       <input ref={createInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setCreatePhotos)} style={{ display: "none" }} />
       <input ref={editInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setEditNewPhotos)} style={{ display: "none" }} />
       <input ref={shipInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setShipPhotos)} style={{ display: "none" }} />
 
-      {/* GROUP MODAL */}
       <Modal
         open={groupOpen}
         onClose={closeGroup}
         title={activeGroup?.title || "Товар"}
-        subtitle="Варіанти (колір/розмір)"
+        subtitle="Варіанти"
         footer={
           <div className="modalFooterSplit">
             <button className="btnSecondary" type="button" onClick={closeGroup}>Закрити</button>
@@ -614,54 +620,49 @@ export default function Stock() {
       >
         {activeGroup ? (
           <div className="variantList">
-            {activeGroup.variants
-              .slice()
-              .sort((a, b) => (a.color || "").localeCompare(b.color || "") || (a.size || "").localeCompare(b.size || ""))
-              .map((v) => {
-                const thumb =
-                  v.photo_paths?.[0]
-                    ? getPublicPhotoUrl(normalizeItemPhotoPath(v.id, v.photo_paths[0]))
-                    : null;
+            {activeGroup.variants.map((v) => {
+              const thumb = v.photo_paths?.[0]
+                ? getPublicPhotoUrl(normalizeItemPhotoPath(v.id, v.photo_paths[0]))
+                : null;
 
-                return (
-                  <div className="variantRow" key={v.id}>
-                    <div className="variantThumb">
-                      {thumb ? <img src={thumb} alt="" /> : <div className="variantThumbEmpty" />}
+              return (
+                <div className="variantRow" key={v.id}>
+                  <div className="variantThumb">
+                    {thumb ? <img src={thumb} alt="" /> : <div className="variantThumbEmpty" />}
+                  </div>
+
+                  <div className="variantMain">
+                    <div className="variantTitle">
+                      <b>{v.color || "—"}</b> • <b>{v.size || "—"}</b>
+                      {v.sku ? <span className="muted"> • SKU-{v.sku}</span> : null}
                     </div>
-
-                    <div className="variantMain">
-                      <div className="variantTitle">
-                        <b>{v.color || "—"}</b> • <b>{v.size || "—"}</b>
-                        {v.sku ? <span className="muted"> • SKU-{v.sku}</span> : null}
-                      </div>
-                      <div className="variantMeta">
-                        <span>В наявності: <b>{v.qty_in_stock}</b></span>
-                        <span>В доставці: <b>{v.qty_in_delivery}</b></span>
-                        <span>Ціна: <b>₴ {v.sale_price}</b></span>
-                      </div>
-                    </div>
-
-                    <div className="variantActions">
-                      <button className="iconAction" type="button" onClick={() => openEditVariant(v)} title="Редагувати">
-                        <IconEdit />
-                      </button>
-                      <button className="iconAction primary" type="button" onClick={() => openShip(v)} title="Відправити" disabled={(v.qty_in_stock ?? 0) <= 0}>
-                        <IconShip />
-                      </button>
+                    <div className="variantMeta">
+                      <span>В наявності: <b>{v.qty_in_stock}</b></span>
+                      <span>В доставці: <b>{v.qty_in_delivery}</b></span>
+                      <span>Ціна: <b>₴ {v.sale_price}</b></span>
                     </div>
                   </div>
-                );
-              })}
+
+                  <div className="variantActions">
+                    <button className="iconAction" type="button" onClick={() => openEditVariant(v)} title="Редагувати">
+                      <IconEdit />
+                    </button>
+                    <button className="iconAction primary" type="button" onClick={() => openShip(v)} title="Відправити" disabled={(v.qty_in_stock ?? 0) <= 0}>
+                      <IconShip />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         ) : null}
       </Modal>
 
-      {/* CREATE */}
       <Modal
         open={createOpen}
         onClose={closeCreate}
         title="Додати варіант"
-        subtitle="Колір + розмір + кількість"
+        subtitle="Колір + розмір"
         footer={
           <div className="modalFooterSplit">
             <button className="btnSecondary" type="button" onClick={closeCreate} disabled={busyCreate}>Скасувати</button>
@@ -716,7 +717,6 @@ export default function Stock() {
         </form>
       </Modal>
 
-      {/* EDIT */}
       <Modal
         open={editOpen}
         onClose={closeEditVariant}
@@ -812,7 +812,6 @@ export default function Stock() {
         ) : null}
       </Modal>
 
-      {/* SHIP */}
       <Modal
         open={shipOpen}
         onClose={closeShip}
