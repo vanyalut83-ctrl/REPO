@@ -1630,3 +1630,81 @@ body{ background: var(--bg); color: var(--text); }
     padding-right: 12px;
   }
 }
+
+/* ===== Create/Edit: Photo block ALWAYS big, full width, rounded, with spacing ===== */
+
+/* відступ зверху і знизу для блоку фото */
+.photoBox{
+  margin-top: 12px;
+  margin-bottom: 12px;
+
+  width: 100%;
+  height: 210px;              /* фіксована висота (не буде тонким) */
+
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: #fff;
+  box-shadow: var(--shadow2);
+  overflow: hidden;
+}
+
+/* внутрішній горизонтальний скрол */
+.photoRow{
+  height: 100%;
+  padding: 12px;
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  align-items: stretch;
+
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+
+  scrollbar-width: none;
+}
+.photoRow::-webkit-scrollbar{ display:none; }
+
+/* слайд фото / кнопка додати */
+.photoSlide,
+.photoAddSmall{
+  height: 100% !important;
+  flex: 0 0 82%;
+  border-radius: 18px;
+  border: 1px solid rgba(11,18,32,.10);
+  background: rgba(11,18,32,.03);
+  overflow: hidden;
+  scroll-snap-align: start;
+}
+
+@media (min-width: 700px){
+  .photoSlide,
+  .photoAddSmall{
+    flex-basis: 340px;
+  }
+}
+
+/* картинка */
+.photoImg{
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* empty state "Додати фото" — на всю висоту */
+.photoAddBig{
+  height: 100%;
+  width: 100%;
+  border: 1px dashed rgba(11,18,32,.18);
+  border-radius: 18px;
+  background: rgba(37,99,235,.06);
+  display: grid;
+  place-items: center;
+  gap: 6px;
+  padding: 0;
+}
+
+/* кнопка видалити фото */
+.photoRemove{
+  border-radius: 14px;
+}
