@@ -39,9 +39,13 @@ function Modal({ open, onClose, title, subtitle, children, footer }) {
             <div className="modalTitle">{title}</div>
             {subtitle ? <div className="modalSubtitle">{subtitle}</div> : null}
           </div>
-          <button className="iconBtn" type="button" onClick={onClose}>✕</button>
+          <button className="iconBtn" type="button" onClick={onClose}>
+            ✕
+          </button>
         </div>
+
         <div className="modalBody">{children}</div>
+
         {footer ? <div className="modalFooter">{footer}</div> : null}
       </div>
     </div>
@@ -76,8 +80,11 @@ function PhotoViewer({ open, urls, startIndex, onClose }) {
     <div className="viewerOverlay" onClick={onClose}>
       <div className="viewerTop" onClick={(e) => e.stopPropagation()}>
         <div className="viewerCount">{urls?.length ? `${idx + 1} / ${urls.length}` : ""}</div>
-        <button className="viewerClose" type="button" onClick={onClose}>Закрити</button>
+        <button className="viewerClose" type="button" onClick={onClose}>
+          Закрити
+        </button>
       </div>
+
       <div className="viewerRow" ref={rowRef} onScroll={onScroll} onClick={(e) => e.stopPropagation()}>
         {urls.map((u) => (
           <div className="viewerSlide" key={u}>
@@ -92,6 +99,7 @@ function PhotoViewer({ open, urls, startIndex, onClose }) {
 export default function Home() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+
   const [q, setQ] = useState("");
 
   const [stats, setStats] = useState({
@@ -112,6 +120,12 @@ export default function Home() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerUrls, setViewerUrls] = useState([]);
   const [viewerIndex, setViewerIndex] = useState(0);
+
+  function openViewer(urls, start = 0) {
+    setViewerUrls(urls);
+    setViewerIndex(start);
+    setViewerOpen(true);
+  }
 
   async function loadStats() {
     const { data: d1 } = await db.from("dashboard_stats").select("*").single();
@@ -151,7 +165,9 @@ export default function Home() {
     }
   }
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    loadAll();
+  }, []);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -228,21 +244,16 @@ export default function Home() {
       .filter(Boolean)
       .map(getPublicPhotoUrl);
 
-    // НОВЕ: читаємо тільки ship_photo_paths (але підтримуємо старе meta.photo_paths якщо було)
+    // ship_photo_paths — тільки для доставки
     const shipPaths =
       Array.isArray(m.ship_photo_paths) ? m.ship_photo_paths :
-      Array.isArray(m.photo_paths) ? m.photo_paths : [];
+      Array.isArray(m.photo_paths) ? m.photo_paths : []; // fallback для старих
 
     const shipUrls = shipPaths.map(getPublicPhotoUrl);
 
+    // порядок: спочатку склад, потім відправлення
     return uniq([...itemUrls, ...shipUrls]);
   }, [active]);
-
-  function openViewer(urls, start = 0) {
-    setViewerUrls(urls);
-    setViewerIndex(start);
-    setViewerOpen(true);
-  }
 
   return (
     <section>
@@ -252,6 +263,7 @@ export default function Home() {
           <div className="homeMetricValue">₴ {money(stats.stock_value)}</div>
           <div className="homeMetricHint">шт * собівартість</div>
         </div>
+
         <div className="homeMetric">
           <div className="homeMetricLabel">Можливий прибуток</div>
           <div className="homeMetricValue">₴ {money(stats.potential_profit)}</div>
@@ -266,7 +278,13 @@ export default function Home() {
       </div>
 
       <div className="homeTools">
-        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Пошук: ПІБ / телефон / колір / розмір..." style={{ flex: "1 1 260px" }} />
+        <input
+          className="input"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Пошук: ПІБ / телефон / колір / розмір..."
+          style={{ flex: "1 1 260px" }}
+        />
         <button className="btnSecondary" type="button" onClick={loadAll}>Оновити</button>
       </div>
 
@@ -298,38 +316,44 @@ export default function Home() {
         })}
       </div>
 
+      {/* DETAILS MODAL */}
       <Modal
         open={open}
         onClose={() => { setOpen(false); setActive(null); }}
         title="Відправлення"
-        subtitle={active ? new Date(active.created_at).toLocaleString() : ""}
+        subtitle={active ? `${active.meta?.full_name || "—"} • ${active.meta?.phone || ""}` : ""}
         footer={
-          active ? (
-            active.status === "waiting" ? (
-              <div className="modalFooterSplit">
-                <button className="btnSecondary" type="button" onClick={() => setOpen(false)}>Закрити</button>
-                <button className="btn" type="button" onClick={() => startTransit(active.id)} disabled={busyId === active.id}>
-                  {busyId === active.id ? "..." : "Відправлено"}
-                </button>
-              </div>
-            ) : (
-              <div className="modalFooterSplit">
-                <button className="btnSecondary" type="button" onClick={() => setOpen(false)}>Закрити</button>
-                <div className="modalFooterRight">
-                  <button className="shipBtnDanger" type="button" onClick={() => markRefused(active.id)} disabled={busyId === active.id}>Відмова</button>
-                  <button className="shipBtnSuccess" type="button" onClick={() => markReceived(active.id)} disabled={busyId === active.id}>Отримано</button>
-                </div>
-              </div>
-            )
-          ) : null
+          <div className="modalFooterSplit">
+            <button className="btnSecondary" type="button" onClick={() => { setOpen(false); setActive(null); }}>
+              Закрити
+            </button>
+          </div>
         }
       >
         {active ? (
           <>
+            {/* КНОПКИ — ВИЩЕ (sticky всередині модалки) */}
+            <div className="shipActionBar">
+              {active.status === "waiting" ? (
+                <button className="btn" type="button" onClick={() => startTransit(active.id)} disabled={busyId === active.id}>
+                  {busyId === active.id ? "..." : "Відправлено"}
+                </button>
+              ) : (
+                <div className="shipActionBar2">
+                  <button className="shipBtnDanger" type="button" onClick={() => markRefused(active.id)} disabled={busyId === active.id}>
+                    Відмова
+                  </button>
+                  <button className="shipBtnSuccess" type="button" onClick={() => markReceived(active.id)} disabled={busyId === active.id}>
+                    Отримано
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* ДАТА — НИЖЧЕ в окремому блоці */}
             <div className="detailBlock">
               <div className="detailBlockTitle">{active.items?.title || "Товар"}</div>
-              <div className="detailLine"><b>ПІБ:</b> {active.meta?.full_name || "—"}</div>
-              <div className="detailLine"><b>Тел:</b> {active.meta?.phone || "—"}</div>
+              <div className="detailLine"><b>Дата/час:</b> {new Date(active.created_at).toLocaleString()}</div>
               <div className="detailLine"><b>Місто:</b> {active.meta?.city || "—"}</div>
               <div className="detailLine"><b>Відділення:</b> {active.meta?.branch || "—"}</div>
               <div className="detailLine"><b>Колір:</b> {active.meta?.color ?? active.items?.color ?? "—"}</div>

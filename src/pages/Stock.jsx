@@ -81,7 +81,7 @@ function Modal({ open, onClose, title, subtitle, children, footer }) {
             <div className="modalTitle">{title}</div>
             {subtitle ? <div className="modalSubtitle">{subtitle}</div> : null}
           </div>
-          <button className="iconBtn" type="button" onClick={onClose} aria-label="Close">
+          <button className="iconBtn" type="button" onClick={onClose}>
             ✕
           </button>
         </div>
@@ -95,7 +95,7 @@ function Modal({ open, onClose, title, subtitle, children, footer }) {
 }
 
 function PhotoSquare({ urls }) {
-  // Фото обрізається під блок (object-fit: cover)
+  // свайп по фото на складі
   return (
     <div className="pMedia">
       <div className="pMediaRow">
@@ -133,6 +133,7 @@ function GroupCard({ group, onOpen }) {
         )}
       </div>
 
+      {/* ГОЛОВНЕ: тут urls = перші фото кожної варіації */}
       <PhotoSquare urls={group.coverUrls} />
 
       <div className="pBody">
@@ -192,14 +193,13 @@ export default function Stock() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
-
   const [q, setQ] = useState("");
 
-  // ---- Group modal (product)
+  // group modal
   const [groupOpen, setGroupOpen] = useState(false);
-  const [activeGroup, setActiveGroup] = useState(null); // {title, variants:[]}
+  const [activeGroup, setActiveGroup] = useState(null);
 
-  // ---- Create variant modal
+  // create variant
   const [createOpen, setCreateOpen] = useState(false);
   const [busyCreate, setBusyCreate] = useState(false);
   const [createForm, setCreateForm] = useState({
@@ -216,11 +216,11 @@ export default function Stock() {
   const [createPhotos, setCreatePhotos] = useState([]);
   const createInputRef = useRef(null);
 
-  // ---- Edit variant modal
+  // edit variant
   const [editOpen, setEditOpen] = useState(false);
   const [busyEdit, setBusyEdit] = useState(false);
   const [busyDelete, setBusyDelete] = useState(false);
-  const [activeVariant, setActiveVariant] = useState(null); // item row
+  const [activeVariant, setActiveVariant] = useState(null);
   const [editForm, setEditForm] = useState({
     title: "",
     color: "",
@@ -235,10 +235,10 @@ export default function Stock() {
   const [editNewPhotos, setEditNewPhotos] = useState([]);
   const editInputRef = useRef(null);
 
-  // ---- Ship modal
+  // ship
   const [shipOpen, setShipOpen] = useState(false);
   const [busyShip, setBusyShip] = useState(false);
-  const [shipVariant, setShipVariant] = useState(null); // selected variant
+  const [shipVariant, setShipVariant] = useState(null);
   const [shipForm, setShipForm] = useState({
     full_name: "",
     phone: "",
@@ -251,9 +251,7 @@ export default function Stock() {
 
   function revokePreviews(arr) {
     for (const p of arr) {
-      try {
-        URL.revokeObjectURL(p.url);
-      } catch {}
+      try { URL.revokeObjectURL(p.url); } catch {}
     }
   }
 
@@ -270,9 +268,7 @@ export default function Stock() {
     }
   }
 
-  useEffect(() => {
-    load();
-  }, []);
+  useEffect(() => { load(); }, []);
 
   function onFilesSelected(setter) {
     return (e) => {
@@ -281,9 +277,7 @@ export default function Stock() {
       if (!files.length) return;
       setter((prev) => [
         ...prev,
-        ...files
-          .filter((f) => f.type?.startsWith("image/"))
-          .map((f) => ({ file: f, url: URL.createObjectURL(f) })),
+        ...files.filter((f) => f.type?.startsWith("image/")).map((f) => ({ file: f, url: URL.createObjectURL(f) })),
       ]);
     };
   }
@@ -302,10 +296,7 @@ export default function Stock() {
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return items;
-    return items.filter((x) => {
-      const hay = `${x.title ?? ""} ${x.color ?? ""} ${x.size ?? ""} ${x.sku ?? ""}`.toLowerCase();
-      return hay.includes(s);
-    });
+    return items.filter((x) => `${x.title ?? ""} ${x.color ?? ""} ${x.size ?? ""} ${x.sku ?? ""}`.toLowerCase().includes(s));
   }, [items, q]);
 
   const groups = useMemo(() => {
@@ -314,7 +305,6 @@ export default function Stock() {
     for (const it of filtered) {
       const key = (it.title ?? "").trim().toLowerCase();
       if (!key) continue;
-
       if (!map.has(key)) {
         map.set(key, {
           key,
@@ -331,12 +321,12 @@ export default function Stock() {
       const qty_in_stock_sum = g.variants.reduce((a, x) => a + (x.qty_in_stock ?? 0), 0);
       const qty_in_delivery_sum = g.variants.reduce((a, x) => a + (x.qty_in_delivery ?? 0), 0);
 
-      // cover: перше фото з першого варіанту, якщо є
-      const first = g.variants.find((v) => (v.photo_paths ?? []).length) || g.variants[0];
-      const coverUrls = (first?.photo_paths ?? [])
-        .map((p) => normalizeItemPhotoPath(first.id, p))
-        .filter(Boolean)
-        .map(getPublicPhotoUrl);
+      // ВАЖЛИВО: перше фото КОЖНОЇ варіації -> список для свайпу в картці
+      const coverUrls = uniq(
+        g.variants
+          .map((v) => v.photo_paths?.[0] ? getPublicPhotoUrl(normalizeItemPhotoPath(v.id, v.photo_paths[0])) : null)
+          .filter(Boolean)
+      );
 
       out.push({
         ...g,
@@ -347,12 +337,10 @@ export default function Stock() {
       });
     }
 
-    // більш “живий” порядок: спочатку де є на складі
     out.sort((a, b) => (b.qty_in_stock_sum - a.qty_in_stock_sum) || a.title.localeCompare(b.title));
     return out;
   }, [filtered]);
 
-  // ----- open group modal
   function openGroup(g) {
     setActiveGroup(g);
     setGroupOpen(true);
@@ -362,7 +350,6 @@ export default function Stock() {
     setActiveGroup(null);
   }
 
-  // ----- create
   function openCreate(initial = {}) {
     setErr("");
     setCreateForm({
@@ -376,18 +363,12 @@ export default function Stock() {
       qty_in_stock: "0",
       qty_in_delivery: "0",
     });
-    setCreatePhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setCreatePhotos((prev) => { revokePreviews(prev); return []; });
     setCreateOpen(true);
   }
   function closeCreate() {
     setCreateOpen(false);
-    setCreatePhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setCreatePhotos((prev) => { revokePreviews(prev); return []; });
   }
 
   async function submitCreate(e) {
@@ -413,6 +394,7 @@ export default function Stock() {
     try {
       const created = await createItem(payload);
 
+      // фото складу тільки тут (і в редагуванні), НЕ в відправленні
       for (const p of createPhotos) {
         const path = await uploadItemPhoto({ itemId: created.id, file: p.file });
         await appendItemPhotoPath(created.id, path);
@@ -427,7 +409,6 @@ export default function Stock() {
     }
   }
 
-  // ----- edit variant
   function openEditVariant(v) {
     setErr("");
     setActiveVariant(v);
@@ -442,19 +423,13 @@ export default function Stock() {
       qty_in_stock: String(v.qty_in_stock ?? 0),
       qty_in_delivery: String(v.qty_in_delivery ?? 0),
     });
-    setEditNewPhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setEditNewPhotos((prev) => { revokePreviews(prev); return []; });
     setEditOpen(true);
   }
   function closeEditVariant() {
     setEditOpen(false);
     setActiveVariant(null);
-    setEditNewPhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setEditNewPhotos((prev) => { revokePreviews(prev); return []; });
   }
 
   async function saveEditVariant() {
@@ -481,6 +456,7 @@ export default function Stock() {
       const { error } = await db.from("items").update(patch).eq("id", activeVariant.id);
       if (error) throw error;
 
+      // фото складу можна редагувати тут
       for (const p of editNewPhotos) {
         const path = await uploadItemPhoto({ itemId: activeVariant.id, file: p.file });
         await appendItemPhotoPath(activeVariant.id, path);
@@ -515,24 +491,17 @@ export default function Stock() {
     }
   }
 
-  // ----- ship (for selected variant)
   function openShip(v) {
     setErr("");
     setShipVariant(v);
     setShipForm({ full_name: "", phone: "", city: "", branch: "", qty: "1" });
-    setShipPhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setShipPhotos((prev) => { revokePreviews(prev); return []; });
     setShipOpen(true);
   }
   function closeShip() {
     setShipOpen(false);
     setShipVariant(null);
-    setShipPhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setShipPhotos((prev) => { revokePreviews(prev); return []; });
   }
 
   async function uploadShipmentPhoto(eventId, file) {
@@ -564,7 +533,6 @@ export default function Stock() {
 
     setBusyShip(true);
     try {
-      // 1) створюємо ship-event + міняємо залишки
       const { data: eventId, error: rpcErr } = await db.rpc("ship_item", {
         p_item_id: shipVariant.id,
         p_qty: qty,
@@ -575,13 +543,11 @@ export default function Stock() {
       });
       if (rpcErr) throw rpcErr;
 
-      // 2) аплоад фото доставки
+      // upload фото доставки
       const uploaded = [];
-      for (const p of shipPhotos) {
-        uploaded.push(await uploadShipmentPhoto(eventId, p.file));
-      }
+      for (const p of shipPhotos) uploaded.push(await uploadShipmentPhoto(eventId, p.file));
 
-      // 3) дописати meta: color/size + photo_paths
+      // update meta: ship_photo_paths (НЕ чіпаємо items.photo_paths)
       const { data: row, error: e1 } = await db.from("item_events").select("meta").eq("id", eventId).single();
       if (e1) throw e1;
 
@@ -599,7 +565,7 @@ export default function Stock() {
 
       closeShip();
       await load();
-      navigate("/"); // на Головну (відправлення)
+      navigate("/");
     } catch (e2) {
       setErr(e2?.message ?? "Помилка відправлення");
     } finally {
@@ -610,16 +576,8 @@ export default function Stock() {
   return (
     <section>
       <div className="stockTop">
-        <input
-          className="input"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Пошук: назва / колір / розмір / sku..."
-          style={{ flex: "1 1 260px" }}
-        />
-        <button className="btnSecondary" type="button" onClick={load}>
-          Оновити
-        </button>
+        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Пошук..." style={{ flex: "1 1 260px" }} />
+        <button className="btnSecondary" type="button" onClick={load}>Оновити</button>
       </div>
 
       {err ? <div className="errorBox">{err}</div> : null}
@@ -631,10 +589,7 @@ export default function Stock() {
         ))}
       </div>
 
-      {/* add button centered */}
-      <button className="fabAdd" type="button" onClick={() => openCreate({})}>
-        + Додати
-      </button>
+      <button className="fabAdd" type="button" onClick={() => openCreate({})}>+ Додати</button>
       <div style={{ height: 84 }} />
 
       {/* hidden inputs */}
@@ -642,7 +597,7 @@ export default function Stock() {
       <input ref={editInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setEditNewPhotos)} style={{ display: "none" }} />
       <input ref={shipInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setShipPhotos)} style={{ display: "none" }} />
 
-      {/* GROUP (product) modal */}
+      {/* GROUP MODAL */}
       <Modal
         open={groupOpen}
         onClose={closeGroup}
@@ -662,35 +617,46 @@ export default function Stock() {
             {activeGroup.variants
               .slice()
               .sort((a, b) => (a.color || "").localeCompare(b.color || "") || (a.size || "").localeCompare(b.size || ""))
-              .map((v) => (
-                <div className="variantRow" key={v.id}>
-                  <div className="variantMain">
-                    <div className="variantTitle">
-                      <b>{v.color || "—"}</b> • <b>{v.size || "—"}</b>
-                      {v.sku ? <span className="muted"> • SKU-{v.sku}</span> : null}
-                    </div>
-                    <div className="variantMeta">
-                      <span>В наявності: <b>{v.qty_in_stock}</b></span>
-                      <span>В доставці: <b>{v.qty_in_delivery}</b></span>
-                      <span>Ціна: <b>₴ {v.sale_price}</b></span>
-                    </div>
-                  </div>
+              .map((v) => {
+                const thumb =
+                  v.photo_paths?.[0]
+                    ? getPublicPhotoUrl(normalizeItemPhotoPath(v.id, v.photo_paths[0]))
+                    : null;
 
-                  <div className="variantActions">
-                    <button className="iconAction" type="button" onClick={() => openEditVariant(v)} title="Редагувати">
-                      <IconEdit />
-                    </button>
-                    <button className="iconAction primary" type="button" onClick={() => openShip(v)} title="Відправити" disabled={(v.qty_in_stock ?? 0) <= 0}>
-                      <IconShip />
-                    </button>
+                return (
+                  <div className="variantRow" key={v.id}>
+                    <div className="variantThumb">
+                      {thumb ? <img src={thumb} alt="" /> : <div className="variantThumbEmpty" />}
+                    </div>
+
+                    <div className="variantMain">
+                      <div className="variantTitle">
+                        <b>{v.color || "—"}</b> • <b>{v.size || "—"}</b>
+                        {v.sku ? <span className="muted"> • SKU-{v.sku}</span> : null}
+                      </div>
+                      <div className="variantMeta">
+                        <span>В наявності: <b>{v.qty_in_stock}</b></span>
+                        <span>В доставці: <b>{v.qty_in_delivery}</b></span>
+                        <span>Ціна: <b>₴ {v.sale_price}</b></span>
+                      </div>
+                    </div>
+
+                    <div className="variantActions">
+                      <button className="iconAction" type="button" onClick={() => openEditVariant(v)} title="Редагувати">
+                        <IconEdit />
+                      </button>
+                      <button className="iconAction primary" type="button" onClick={() => openShip(v)} title="Відправити" disabled={(v.qty_in_stock ?? 0) <= 0}>
+                        <IconShip />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
           </div>
         ) : null}
       </Modal>
 
-      {/* CREATE variant modal */}
+      {/* CREATE */}
       <Modal
         open={createOpen}
         onClose={closeCreate}
@@ -708,58 +674,49 @@ export default function Stock() {
         <AddPhotoCarousel photos={createPhotos} onAdd={() => createInputRef.current?.click()} onRemove={removePhoto(setCreatePhotos)} />
 
         <form id="createVariantForm" onSubmit={submitCreate} className="form">
-          <label>
-            Назва
+          <label>Назва
             <input className="input" value={createForm.title} onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })} />
           </label>
 
           <div className="row2">
-            <label>
-              Колір
-              <input className="input" value={createForm.color} onChange={(e) => setCreateForm({ ...createForm, color: e.target.value })} placeholder="Напр. Чорний" />
+            <label>Колір
+              <input className="input" value={createForm.color} onChange={(e) => setCreateForm({ ...createForm, color: e.target.value })} />
             </label>
-            <label>
-              Розмір
-              <input className="input" value={createForm.size} onChange={(e) => setCreateForm({ ...createForm, size: e.target.value })} placeholder="S / M / L / 42" />
+            <label>Розмір
+              <input className="input" value={createForm.size} onChange={(e) => setCreateForm({ ...createForm, size: e.target.value })} />
             </label>
           </div>
 
           <div className="row2">
-            <label>
-              SKU (опц.)
+            <label>SKU (опц.)
               <input className="input" value={createForm.sku} onChange={(e) => setCreateForm({ ...createForm, sku: e.target.value })} />
             </label>
-            <label>
-              Тег/Нотатка (опц.)
-              <input className="input" value={createForm.note} onChange={(e) => setCreateForm({ ...createForm, note: e.target.value })} placeholder="Напр. Одяг" />
+            <label>Тег/Нотатка (опц.)
+              <input className="input" value={createForm.note} onChange={(e) => setCreateForm({ ...createForm, note: e.target.value })} />
             </label>
           </div>
 
           <div className="row2">
-            <label>
-              Собівартість (₴/шт)
+            <label>Собівартість
               <input className="input" inputMode="decimal" value={createForm.cost} onChange={(e) => setCreateForm({ ...createForm, cost: e.target.value })} />
             </label>
-            <label>
-              Ціна продажу (₴/шт)
+            <label>Ціна
               <input className="input" inputMode="decimal" value={createForm.sale_price} onChange={(e) => setCreateForm({ ...createForm, sale_price: e.target.value })} />
             </label>
           </div>
 
           <div className="row2">
-            <label>
-              В наявності (шт)
+            <label>В наявності
               <input className="input" inputMode="numeric" value={createForm.qty_in_stock} onChange={(e) => setCreateForm({ ...createForm, qty_in_stock: e.target.value })} />
             </label>
-            <label>
-              В доставці (шт)
+            <label>В доставці
               <input className="input" inputMode="numeric" value={createForm.qty_in_delivery} onChange={(e) => setCreateForm({ ...createForm, qty_in_delivery: e.target.value })} />
             </label>
           </div>
         </form>
       </Modal>
 
-      {/* EDIT variant modal (delete first icon) */}
+      {/* EDIT */}
       <Modal
         open={editOpen}
         onClose={closeEditVariant}
@@ -767,21 +724,12 @@ export default function Stock() {
         subtitle={activeVariant ? `${activeVariant.title} • ${activeVariant.color || "—"} • ${activeVariant.size || "—"}` : ""}
         footer={
           <div className="modalFooterSplit">
-            <button
-              className="iconDanger"
-              type="button"
-              onClick={deleteVariant}
-              disabled={busyDelete || busyEdit}
-              title="Видалити"
-              aria-label="Delete"
-            >
+            <button className="iconDanger" type="button" onClick={deleteVariant} disabled={busyDelete || busyEdit} title="Видалити">
               <IconTrash />
             </button>
 
             <div className="modalFooterRight">
-              <button className="btnSecondary" type="button" onClick={closeEditVariant} disabled={busyDelete || busyEdit}>
-                Закрити
-              </button>
+              <button className="btnSecondary" type="button" onClick={closeEditVariant} disabled={busyDelete || busyEdit}>Закрити</button>
               <button className="btn" type="button" onClick={saveEditVariant} disabled={busyDelete || busyEdit}>
                 {busyEdit ? "Зберігаю..." : "Зберегти"}
               </button>
@@ -795,8 +743,7 @@ export default function Stock() {
               <div className="photoRow">
                 {(activeVariant.photo_paths ?? []).length ? (
                   (activeVariant.photo_paths ?? []).map((p) => {
-                    const norm = normalizeItemPhotoPath(activeVariant.id, p);
-                    const url = getPublicPhotoUrl(norm);
+                    const url = getPublicPhotoUrl(normalizeItemPhotoPath(activeVariant.id, p));
                     return (
                       <div className="photoSlide" key={p}>
                         <img className="photoImg" src={url} alt="" />
@@ -821,51 +768,42 @@ export default function Stock() {
             ) : null}
 
             <form className="form" onSubmit={(e) => e.preventDefault()}>
-              <label>
-                Назва
+              <label>Назва
                 <input className="input" value={editForm.title} onChange={(e) => setEditForm({ ...editForm, title: e.target.value })} />
               </label>
 
               <div className="row2">
-                <label>
-                  Колір
+                <label>Колір
                   <input className="input" value={editForm.color} onChange={(e) => setEditForm({ ...editForm, color: e.target.value })} />
                 </label>
-                <label>
-                  Розмір
+                <label>Розмір
                   <input className="input" value={editForm.size} onChange={(e) => setEditForm({ ...editForm, size: e.target.value })} />
                 </label>
               </div>
 
               <div className="row2">
-                <label>
-                  SKU
+                <label>SKU
                   <input className="input" value={editForm.sku} onChange={(e) => setEditForm({ ...editForm, sku: e.target.value })} />
                 </label>
-                <label>
-                  Тег/Нотатка
+                <label>Тег/Нотатка
                   <input className="input" value={editForm.note} onChange={(e) => setEditForm({ ...editForm, note: e.target.value })} />
                 </label>
               </div>
 
               <div className="row2">
-                <label>
-                  Собівартість
+                <label>Собівартість
                   <input className="input" inputMode="decimal" value={editForm.cost} onChange={(e) => setEditForm({ ...editForm, cost: e.target.value })} />
                 </label>
-                <label>
-                  Ціна
+                <label>Ціна
                   <input className="input" inputMode="decimal" value={editForm.sale_price} onChange={(e) => setEditForm({ ...editForm, sale_price: e.target.value })} />
                 </label>
               </div>
 
               <div className="row2">
-                <label>
-                  В наявності
+                <label>В наявності
                   <input className="input" inputMode="numeric" value={editForm.qty_in_stock} onChange={(e) => setEditForm({ ...editForm, qty_in_stock: e.target.value })} />
                 </label>
-                <label>
-                  В доставці
+                <label>В доставці
                   <input className="input" inputMode="numeric" value={editForm.qty_in_delivery} onChange={(e) => setEditForm({ ...editForm, qty_in_delivery: e.target.value })} />
                 </label>
               </div>
@@ -874,21 +812,15 @@ export default function Stock() {
         ) : null}
       </Modal>
 
-      {/* SHIP modal */}
+      {/* SHIP */}
       <Modal
         open={shipOpen}
         onClose={closeShip}
         title="Відправити"
-        subtitle={
-          shipVariant
-            ? `${shipVariant.title} • ${shipVariant.color || "—"} • ${shipVariant.size || "—"}`
-            : ""
-        }
+        subtitle={shipVariant ? `${shipVariant.title} • ${shipVariant.color || "—"} • ${shipVariant.size || "—"}` : ""}
         footer={
           <div className="modalFooterSplit">
-            <button className="btnSecondary" type="button" onClick={closeShip} disabled={busyShip}>
-              Скасувати
-            </button>
+            <button className="btnSecondary" type="button" onClick={closeShip} disabled={busyShip}>Скасувати</button>
             <button className="btn" type="submit" form="shipForm" disabled={busyShip}>
               {busyShip ? "Відправляю..." : "Відправити"}
             </button>
@@ -899,29 +831,24 @@ export default function Stock() {
 
         <form id="shipForm" onSubmit={submitShip} className="form">
           <div className="row2">
-            <label>
-              ПІБ
+            <label>ПІБ
               <input className="input" value={shipForm.full_name} onChange={(e) => setShipForm({ ...shipForm, full_name: e.target.value })} />
             </label>
-            <label>
-              Телефон
+            <label>Телефон
               <input className="input" inputMode="tel" value={shipForm.phone} onChange={(e) => setShipForm({ ...shipForm, phone: e.target.value })} />
             </label>
           </div>
 
           <div className="row2">
-            <label>
-              Місто
+            <label>Місто
               <input className="input" value={shipForm.city} onChange={(e) => setShipForm({ ...shipForm, city: e.target.value })} />
             </label>
-            <label>
-              № відділення
+            <label>№ відділення
               <input className="input" value={shipForm.branch} onChange={(e) => setShipForm({ ...shipForm, branch: e.target.value })} />
             </label>
           </div>
 
-          <label>
-            Кількість (доступно: {shipVariant?.qty_in_stock ?? 0})
+          <label>Кількість (доступно: {shipVariant?.qty_in_stock ?? 0})
             <input className="input" inputMode="numeric" value={shipForm.qty} onChange={(e) => setShipForm({ ...shipForm, qty: e.target.value })} />
           </label>
         </form>

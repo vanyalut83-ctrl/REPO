@@ -1463,3 +1463,45 @@ body{ background: var(--bg); color: var(--text); }
 }
 .shipBtnDanger{ border:1px solid rgba(239,68,68,.25); background: rgba(239,68,68,.10); color:#991B1B; }
 .shipBtnSuccess{ border:1px solid rgba(16,185,129,.25); background: rgba(16,185,129,.10); color:#067647; }
+
+/* safe-area bottom for iPhone */
+.modalFooter{
+  padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+}
+
+/* actions sticky in shipment modal */
+.shipActionBar{
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: rgba(255,255,255,.92);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 10px;
+}
+.shipActionBar2{
+  display: grid;
+  gap: 10px;
+}
+@media (min-width: 520px){
+  .shipActionBar2{
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+/* crop images in stock cards */
+.pMediaImg{ object-fit: cover; }
+
+/* variant thumb */
+.variantRow{ align-items: center; }
+.variantThumb{
+  width: 54px; height: 54px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: rgba(11,18,32,.04);
+  flex: 0 0 auto;
+}
+.variantThumb img{ width:100%; height:100%; object-fit: cover; display:block; }
+.variantThumbEmpty{ width:100%; height:100%; }
