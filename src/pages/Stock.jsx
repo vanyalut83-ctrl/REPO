@@ -97,7 +97,6 @@ function Modal({ open, onClose, title, subtitle, children, footer }) {
 function PhotoSquare({ urls }) {
   const rowRef = useRef(null);
 
-  // важливо: при зміні набору фото завжди стартуємо з першого
   useEffect(() => {
     const el = rowRef.current;
     if (!el) return;
@@ -146,13 +145,13 @@ function GroupCard({ group, onOpen }) {
         )}
       </div>
 
-      {/* свайп фото тут */}
+      {/* 1 фото з кожної варіації -> свайп */}
       <PhotoSquare urls={group.coverUrls} />
 
-      <div className="pBody">
+      <div className="pBody compact">
         <div className="pTitle">{group.title}</div>
         <div className="pSub">
-          В наявності: <b>{qty}</b> • В доставці: <b>{group.qty_in_delivery_sum}</b>
+          <b>{qty}</b> шт • достав: <b>{group.qty_in_delivery_sum}</b>
         </div>
 
         <div className="pFooter">
@@ -214,11 +213,12 @@ export default function Stock() {
   const [createOpen, setCreateOpen] = useState(false);
   const [busyCreate, setBusyCreate] = useState(false);
   const [createForm, setCreateForm] = useState({
+    product_id: "", // тільки коли додаємо варіант в існуючий товар
     title: "",
     color: "",
     size: "",
     sku: "",
-    note: "",
+    note: "", // тег
     cost: "0",
     sale_price: "0",
     qty_in_stock: "0",
@@ -229,7 +229,7 @@ export default function Stock() {
 
   const [editOpen, setEditOpen] = useState(false);
   const [busyEdit, setBusyEdit] = useState(false);
-  const [busyDelete, setBusyDelete] = useState(false);
+  const [busyArchive, setBusyArchive] = useState(false);
   const [activeVariant, setActiveVariant] = useState(null);
   const [editForm, setEditForm] = useState({
     title: "",
@@ -302,21 +302,26 @@ export default function Stock() {
     };
   }
 
+  // ПОШУК: + tag(note)
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return items;
-    return items.filter((x) => `${x.title ?? ""} ${x.color ?? ""} ${x.size ?? ""} ${x.sku ?? ""}`.toLowerCase().includes(s));
+    return items.filter((x) => {
+      const hay = `${x.title ?? ""} ${x.color ?? ""} ${x.size ?? ""} ${x.sku ?? ""} ${x.note ?? ""}`.toLowerCase();
+      return hay.includes(s);
+    });
   }, [items, q]);
 
+  // ГРУПУВАННЯ ТЕПЕР ПО product_id (а не по title!)
   const groups = useMemo(() => {
     const map = new Map();
 
     for (const it of filtered) {
-      const key = (it.title ?? "").trim().toLowerCase();
+      const key = it.product_id;
       if (!key) continue;
       if (!map.has(key)) {
         map.set(key, {
-          key,
+          product_id: key,
           title: it.title,
           tag: (it.note && String(it.note).trim().slice(0, 12)) || "Товар",
           variants: [],
@@ -330,8 +335,10 @@ export default function Stock() {
       const qty_in_stock_sum = g.variants.reduce((a, x) => a + (x.qty_in_stock ?? 0), 0);
       const qty_in_delivery_sum = g.variants.reduce((a, x) => a + (x.qty_in_delivery ?? 0), 0);
 
-      // порядок варіацій: по created_at (старіша перша)
-      const variantsSorted = [...g.variants].sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+      // порядок варіацій стабільний
+      const variantsSorted = [...g.variants].sort((a, b) =>
+        (a.color || "").localeCompare(b.color || "") || (a.size || "").localeCompare(b.size || "")
+      );
 
       // coverUrls: перше фото кожної варіації
       const coverUrls = uniq(
@@ -367,9 +374,12 @@ export default function Stock() {
     setActiveGroup(null);
   }
 
+  // CREATE: новий товар -> product_id не задаємо (створиться дефолтом)
+  // CREATE: нова варіація -> product_id беремо з групи
   function openCreate(initial = {}) {
     setErr("");
     setCreateForm({
+      product_id: initial.product_id || "",
       title: initial.title ?? "",
       color: "",
       size: "",
@@ -391,6 +401,7 @@ export default function Stock() {
   async function submitCreate(e) {
     e.preventDefault();
     setErr("");
+
     const title = createForm.title.trim();
     if (!title) return setErr("Вкажи назву");
 
@@ -406,13 +417,18 @@ export default function Stock() {
       qty_in_delivery: toInt(createForm.qty_in_delivery),
     };
 
+    if (createForm.product_id) payload.product_id = createForm.product_id; // тільки для варіації
+
     setBusyCreate(true);
     try {
       const created = await createItem(payload);
+
+      // Фото складу додаємо тільки тут і в редагуванні
       for (const p of createPhotos) {
         const path = await uploadItemPhoto({ itemId: created.id, file: p.file });
         await appendItemPhotoPath(created.id, path);
       }
+
       closeCreate();
       await load();
     } catch (e2) {
@@ -448,6 +464,7 @@ export default function Stock() {
   async function saveEditVariant() {
     if (!activeVariant) return;
     setErr("");
+
     const title = editForm.title.trim();
     if (!title) return setErr("Вкажи назву");
 
@@ -482,22 +499,24 @@ export default function Stock() {
     }
   }
 
-  async function deleteVariant() {
+  // ВИДАЛЕННЯ -> АРХІВ (історія/прибуток НЕ зникають)
+  async function archiveVariant() {
     if (!activeVariant) return;
-    const ok = window.confirm(`Видалити варіант?\n${activeVariant.title} • ${activeVariant.color || "-"} • ${activeVariant.size || "-"}`);
+    const ok = window.confirm("Прибрати з Складу (архів)? Історія та прибуток залишаться.");
     if (!ok) return;
 
-    setBusyDelete(true);
+    setBusyArchive(true);
     setErr("");
     try {
-      const { error } = await db.from("items").delete().eq("id", activeVariant.id);
+      const { error } = await db.from("items").update({ is_archived: true }).eq("id", activeVariant.id);
       if (error) throw error;
+
       closeEditVariant();
       await load();
     } catch (e) {
-      setErr(e?.message ?? "Помилка видалення");
+      setErr(e?.message ?? "Помилка архівації");
     } finally {
-      setBusyDelete(false);
+      setBusyArchive(false);
     }
   }
 
@@ -556,6 +575,7 @@ export default function Stock() {
       const uploaded = [];
       for (const p of shipPhotos) uploaded.push(await uploadShipmentPhoto(eventId, p.file));
 
+      // тільки ship_photo_paths (склад НЕ чіпаємо)
       const { data: row, error: e1 } = await db.from("item_events").select("meta").eq("id", eventId).single();
       if (e1) throw e1;
 
@@ -584,7 +604,13 @@ export default function Stock() {
   return (
     <section>
       <div className="stockTop">
-        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Пошук..." style={{ flex: "1 1 260px" }} />
+        <input
+          className="input"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Пошук: назва / колір / розмір / sku / тег..."
+          style={{ flex: "1 1 260px" }}
+        />
         <button className="btnSecondary" type="button" onClick={load}>Оновити</button>
       </div>
 
@@ -593,17 +619,18 @@ export default function Stock() {
 
       <div className="premiumGrid">
         {groups.map((g) => (
-          <GroupCard key={g.key} group={g} onOpen={() => openGroup(g)} />
+          <GroupCard key={g.product_id} group={g} onOpen={() => openGroup(g)} />
         ))}
       </div>
 
       <button className="fabAdd" type="button" onClick={() => openCreate({})}>+ Додати</button>
       <div style={{ height: 84 }} />
 
-      <input ref={createInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setCreatePhotos)} style={{ display: "none" }} />
-      <input ref={editInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setEditNewPhotos)} style={{ display: "none" }} />
-      <input ref={shipInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setShipPhotos)} style={{ display: "none" }} />
+      <input ref={createInputRef} type="file" accept="image/*" multiple onChange={(e) => onFilesSelected(setCreatePhotos)(e)} style={{ display: "none" }} />
+      <input ref={editInputRef} type="file" accept="image/*" multiple onChange={(e) => onFilesSelected(setEditNewPhotos)(e)} style={{ display: "none" }} />
+      <input ref={shipInputRef} type="file" accept="image/*" multiple onChange={(e) => onFilesSelected(setShipPhotos)(e)} style={{ display: "none" }} />
 
+      {/* GROUP */}
       <Modal
         open={groupOpen}
         onClose={closeGroup}
@@ -612,7 +639,7 @@ export default function Stock() {
         footer={
           <div className="modalFooterSplit">
             <button className="btnSecondary" type="button" onClick={closeGroup}>Закрити</button>
-            <button className="btn" type="button" onClick={() => openCreate({ title: activeGroup?.title || "" })}>
+            <button className="btn" type="button" onClick={() => openCreate({ product_id: activeGroup?.product_id, title: activeGroup?.title, note: activeGroup?.tag })}>
               + Додати варіант
             </button>
           </div>
@@ -637,9 +664,9 @@ export default function Stock() {
                       {v.sku ? <span className="muted"> • SKU-{v.sku}</span> : null}
                     </div>
                     <div className="variantMeta">
-                      <span>В наявності: <b>{v.qty_in_stock}</b></span>
-                      <span>В доставці: <b>{v.qty_in_delivery}</b></span>
-                      <span>Ціна: <b>₴ {v.sale_price}</b></span>
+                      <span>Наявн: <b>{v.qty_in_stock}</b></span>
+                      <span>Дост: <b>{v.qty_in_delivery}</b></span>
+                      <span>₴ <b>{v.sale_price}</b></span>
                     </div>
                   </div>
 
@@ -658,11 +685,12 @@ export default function Stock() {
         ) : null}
       </Modal>
 
+      {/* CREATE */}
       <Modal
         open={createOpen}
         onClose={closeCreate}
-        title="Додати варіант"
-        subtitle="Колір + розмір"
+        title={createForm.product_id ? "Додати варіант" : "Додати товар"}
+        subtitle={createForm.product_id ? "Це буде варіація в обраному товарі" : "Новий товар (окремий)"}
         footer={
           <div className="modalFooterSplit">
             <button className="btnSecondary" type="button" onClick={closeCreate} disabled={busyCreate}>Скасувати</button>
@@ -692,7 +720,7 @@ export default function Stock() {
             <label>SKU (опц.)
               <input className="input" value={createForm.sku} onChange={(e) => setCreateForm({ ...createForm, sku: e.target.value })} />
             </label>
-            <label>Тег/Нотатка (опц.)
+            <label>Тег (опц.)
               <input className="input" value={createForm.note} onChange={(e) => setCreateForm({ ...createForm, note: e.target.value })} />
             </label>
           </div>
@@ -717,20 +745,21 @@ export default function Stock() {
         </form>
       </Modal>
 
+      {/* EDIT */}
       <Modal
         open={editOpen}
         onClose={closeEditVariant}
-        title="Редагувати варіант"
+        title="Редагувати"
         subtitle={activeVariant ? `${activeVariant.title} • ${activeVariant.color || "—"} • ${activeVariant.size || "—"}` : ""}
         footer={
           <div className="modalFooterSplit">
-            <button className="iconDanger" type="button" onClick={deleteVariant} disabled={busyDelete || busyEdit} title="Видалити">
+            <button className="iconDanger" type="button" onClick={archiveVariant} disabled={busyArchive || busyEdit} title="Прибрати зі складу (архів)">
               <IconTrash />
             </button>
 
             <div className="modalFooterRight">
-              <button className="btnSecondary" type="button" onClick={closeEditVariant} disabled={busyDelete || busyEdit}>Закрити</button>
-              <button className="btn" type="button" onClick={saveEditVariant} disabled={busyDelete || busyEdit}>
+              <button className="btnSecondary" type="button" onClick={closeEditVariant} disabled={busyArchive || busyEdit}>Закрити</button>
+              <button className="btn" type="button" onClick={saveEditVariant} disabled={busyArchive || busyEdit}>
                 {busyEdit ? "Зберігаю..." : "Зберегти"}
               </button>
             </div>
@@ -785,7 +814,7 @@ export default function Stock() {
                 <label>SKU
                   <input className="input" value={editForm.sku} onChange={(e) => setEditForm({ ...editForm, sku: e.target.value })} />
                 </label>
-                <label>Тег/Нотатка
+                <label>Тег
                   <input className="input" value={editForm.note} onChange={(e) => setEditForm({ ...editForm, note: e.target.value })} />
                 </label>
               </div>
@@ -812,6 +841,7 @@ export default function Stock() {
         ) : null}
       </Modal>
 
+      {/* SHIP */}
       <Modal
         open={shipOpen}
         onClose={closeShip}

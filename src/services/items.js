@@ -4,6 +4,7 @@ export async function listItems() {
   const { data, error } = await db
     .from("items")
     .select("*")
+    .eq("is_archived", false)
     .order("updated_at", { ascending: false });
 
   if (error) throw error;

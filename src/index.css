@@ -1551,3 +1551,22 @@ body{ background: var(--bg); color: var(--text); }
   padding: 14px;
 }
 .chartTitle{ font-weight: 950; margin-bottom: 8px; }
+
+/* компактніше */
+.pBody.compact{ padding: 10px 12px 12px; }
+.pTitle{ font-size: 14px; }
+.pSub{ font-size: 12px; margin-top: 4px; }
+
+/* щоб блок не був "дуже великий" */
+.pMedia{ aspect-ratio: 4 / 3; } /* було 1/1 */
+.pMediaRow{
+  height: 100%;
+  display:flex;
+  overflow-x:auto;
+  scroll-snap-type:x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width:none;
+}
+.pMediaRow::-webkit-scrollbar{ display:none; }
+.pMediaSlide{ flex: 0 0 100%; scroll-snap-align:start; height:100%; }
+.pMediaImg{ width:100%; height:100%; object-fit:cover; display:block; }

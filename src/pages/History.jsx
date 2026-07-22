@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../services/supabase";
 import { getPublicPhotoUrl } from "../services/photos";
 
@@ -49,9 +49,61 @@ function Modal({ open, onClose, children }) {
   );
 }
 
+function PhotoViewer({ open, urls, startIndex, onClose }) {
+  const rowRef = useRef(null);
+  const [idx, setIdx] = useState(startIndex ?? 0);
+
+  useEffect(() => {
+    if (!open) return;
+    setIdx(startIndex ?? 0);
+    requestAnimationFrame(() => {
+      const el = rowRef.current;
+      if (!el) return;
+      const slide = el.children[startIndex ?? 0];
+      slide?.scrollIntoView?.({ behavior: "instant", inline: "start" });
+    });
+  }, [open, startIndex, urls?.length]);
+
+  function onScroll() {
+    const el = rowRef.current;
+    if (!el) return;
+    const w = el.clientWidth || 1;
+    setIdx(Math.round(el.scrollLeft / w));
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="viewerOverlay" onClick={onClose}>
+      <div className="viewerTop" onClick={(e) => e.stopPropagation()}>
+        <div className="viewerCount">
+          {urls?.length ? `${idx + 1} / ${urls.length}` : ""}
+        </div>
+        <button className="viewerClose" type="button" onClick={onClose}>
+          Закрити
+        </button>
+      </div>
+
+      <div
+        className="viewerRow"
+        ref={rowRef}
+        onScroll={onScroll}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {urls.map((u) => (
+          <div className="viewerSlide" key={u}>
+            <img className="viewerImg" src={u} alt="" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function History() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [busyDelete, setBusyDelete] = useState(false);
   const [err, setErr] = useState("");
 
   const [q, setQ] = useState("");
@@ -61,6 +113,17 @@ export default function History() {
 
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(null);
+
+  // viewer
+  const [viewerOpen, setViewerOpen] = useState(false);
+  const [viewerUrls, setViewerUrls] = useState([]);
+  const [viewerIndex, setViewerIndex] = useState(0);
+
+  function openViewer(urls, start = 0) {
+    setViewerUrls(urls);
+    setViewerIndex(start);
+    setViewerOpen(true);
+  }
 
   async function load(overrides = {}) {
     setLoading(true);
@@ -82,6 +145,7 @@ export default function History() {
 
       const { data, error } = await query;
       if (error) throw error;
+
       setRows(data ?? []);
     } catch (e) {
       setErr(e?.message ?? "Помилка завантаження історії");
@@ -98,20 +162,27 @@ export default function History() {
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return rows;
+
     return rows.filter((r) => {
-      const hay = `${r.title ?? ""} ${r.color ?? ""} ${r.size ?? ""} ${r.sku ?? ""} ${r.full_name ?? ""} ${r.phone ?? ""} ${r.city ?? ""} ${r.branch ?? ""}`.toLowerCase();
+      const hay =
+        `${r.title ?? ""} ${r.color ?? ""} ${r.size ?? ""} ${r.sku ?? ""} ` +
+        `${r.full_name ?? ""} ${r.phone ?? ""} ${r.city ?? ""} ${r.branch ?? ""}`
+          .toLowerCase();
       return hay.includes(s);
     });
   }, [rows, q]);
 
   const activeUrls = useMemo(() => {
     if (!active) return [];
+
     const itemUrls = (active.item_photo_paths ?? [])
       .map((p) => normalizeItemPhotoPath(active.item_id, p))
       .filter(Boolean)
       .map(getPublicPhotoUrl);
 
-    const shipPaths = Array.isArray(active.ship_photo_paths) ? active.ship_photo_paths : [];
+    const shipPaths = Array.isArray(active.ship_photo_paths)
+      ? active.ship_photo_paths
+      : [];
     const shipUrls = shipPaths.map(getPublicPhotoUrl);
 
     return uniq([...itemUrls, ...shipUrls]);
@@ -125,22 +196,75 @@ export default function History() {
     await load({ type: "all", dateFrom: "", dateTo: "" });
   }
 
+  async function deleteActiveEvent() {
+    if (!active?.event_id) return;
+
+    const ok = window.confirm(
+      "Видалити цей запис з історії?\n" +
+        "Дія відкотить лічильники (в доставку/на склад) і прибере запис з прибутку."
+    );
+    if (!ok) return;
+
+    setBusyDelete(true);
+    setErr("");
+    try {
+      const { error } = await db.rpc("delete_history_event", {
+        p_event_id: active.event_id,
+      });
+      if (error) throw error;
+
+      setOpen(false);
+      setActive(null);
+
+      await load(); // перезавантажити список з поточними фільтрами
+    } catch (e) {
+      setErr(e?.message ?? "Помилка видалення запису");
+    } finally {
+      setBusyDelete(false);
+    }
+  }
+
   return (
     <section>
       <div className="histTop">
-        <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Пошук..." style={{ flex: "1 1 240px" }} />
+        <input
+          className="input"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Пошук..."
+          style={{ flex: "1 1 240px" }}
+        />
 
-        <select className="input" value={type} onChange={(e) => setType(e.target.value)} style={{ maxWidth: 220 }}>
+        <select
+          className="input"
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          style={{ maxWidth: 220 }}
+        >
           <option value="all">Всі</option>
           <option value="delivered">Отримано</option>
           <option value="return">Скасовано/Повернено</option>
         </select>
 
-        <input className="input" type="date" value={dateFrom || ""} onChange={(e) => setDateFrom(e.target.value)} />
-        <input className="input" type="date" value={dateTo || ""} onChange={(e) => setDateTo(e.target.value)} />
+        <input
+          className="input"
+          type="date"
+          value={dateFrom || ""}
+          onChange={(e) => setDateFrom(e.target.value)}
+        />
+        <input
+          className="input"
+          type="date"
+          value={dateTo || ""}
+          onChange={(e) => setDateTo(e.target.value)}
+        />
 
-        <button className="btnSecondary" type="button" onClick={() => load()}>Застосувати</button>
-        <button className="btnSecondary" type="button" onClick={resetFilters}>Скинути</button>
+        <button className="btnSecondary" type="button" onClick={() => load()}>
+          Застосувати
+        </button>
+        <button className="btnSecondary" type="button" onClick={resetFilters}>
+          Скинути
+        </button>
       </div>
 
       {err ? <div className="errorBox">{err}</div> : null}
@@ -156,7 +280,10 @@ export default function History() {
               key={r.event_id}
               className="histCard"
               type="button"
-              onClick={() => { setActive(r); setOpen(true); }}
+              onClick={() => {
+                setActive(r);
+                setOpen(true);
+              }}
             >
               <div className="histHead">
                 <div className={`histBadge ${b.tone}`}>{b.text}</div>
@@ -170,20 +297,40 @@ export default function History() {
                 {r.sku ? ` • SKU-${r.sku}` : ""}
               </div>
 
-              <div className="histRow"><span>К-сть</span><b>{r.qty}</b></div>
-              <div className="histRow"><span>Собівартість (сума)</span><b>₴ {money(r.cost_total)}</b></div>
-              <div className="histRow"><span>Сума</span><b>₴ {money(r.amount)}</b></div>
+              <div className="histRow">
+                <span>К-сть</span>
+                <b>{r.qty}</b>
+              </div>
+              <div className="histRow">
+                <span>Собівартість (сума)</span>
+                <b>₴ {money(r.cost_total)}</b>
+              </div>
+              <div className="histRow">
+                <span>Сума</span>
+                <b>₴ {money(r.amount)}</b>
+              </div>
               <div className="histRow">
                 <span>Прибуток</span>
-                <b style={{ color: Number(r.profit) >= 0 ? "#067647" : "#991B1B" }}>
+                <b
+                  style={{
+                    color: Number(r.profit) >= 0 ? "#067647" : "#991B1B",
+                  }}
+                >
                   ₴ {money(r.profit)}
                 </b>
               </div>
 
               <div className="histMini">
-                <div><b>Отримувач:</b> {r.full_name || "—"}</div>
-                <div><b>Тел:</b> {r.phone || "—"}</div>
-                <div><b>Місто:</b> {r.city || "—"}{r.branch ? `, відд. ${r.branch}` : ""}</div>
+                <div>
+                  <b>Отримувач:</b> {r.full_name || "—"}
+                </div>
+                <div>
+                  <b>Тел:</b> {r.phone || "—"}
+                </div>
+                <div>
+                  <b>Місто:</b> {r.city || "—"}
+                  {r.branch ? `, відд. ${r.branch}` : ""}
+                </div>
               </div>
             </button>
           );
@@ -194,16 +341,24 @@ export default function History() {
         <div className="modalHeader">
           <div>
             <div className="modalTitle">Деталі</div>
-            <div className="modalSubtitle">{active ? new Date(active.created_at).toLocaleString() : ""}</div>
+            <div className="modalSubtitle">
+              {active ? new Date(active.created_at).toLocaleString() : ""}
+            </div>
           </div>
-          <button className="iconBtn" type="button" onClick={() => setOpen(false)}>✕</button>
+
+          <button className="iconBtn" type="button" onClick={() => setOpen(false)}>
+            ✕
+          </button>
         </div>
 
         <div className="modalBody">
           {active ? (
             <>
               <div style={{ fontWeight: 950 }}>
-                {active.title}{active.color ? ` • ${active.color}` : ""}{active.size ? ` • ${active.size}` : ""}{active.sku ? ` • SKU-${active.sku}` : ""}
+                {active.title}
+                {active.color ? ` • ${active.color}` : ""}
+                {active.size ? ` • ${active.size}` : ""}
+                {active.sku ? ` • SKU-${active.sku}` : ""}
               </div>
 
               <div className="detailGrid">
@@ -212,7 +367,12 @@ export default function History() {
                 <div><span>Ціна/шт</span><b>₴ {money(active.sale_price)}</b></div>
                 <div><span>Собівартість (сума)</span><b>₴ {money(active.cost_total)}</b></div>
                 <div><span>Сума</span><b>₴ {money(active.amount)}</b></div>
-                <div><span>Прибуток</span><b style={{ color: Number(active.profit) >= 0 ? "#067647" : "#991B1B" }}>₴ {money(active.profit)}</b></div>
+                <div>
+                  <span>Прибуток</span>
+                  <b style={{ color: Number(active.profit) >= 0 ? "#067647" : "#991B1B" }}>
+                    ₴ {money(active.profit)}
+                  </b>
+                </div>
               </div>
 
               <div className="detailBlock">
@@ -224,11 +384,19 @@ export default function History() {
               </div>
 
               <div className="detailBlock">
-                <div className="detailBlockTitle">Фото</div>
+                <div className="detailBlockTitle">Фото (клік — відкрити)</div>
                 {activeUrls.length ? (
                   <div className="detailPhotos">
-                    {activeUrls.map((u) => (
-                      <img key={u} src={u} alt="" className="detailPhoto" loading="lazy" />
+                    {activeUrls.map((u, idx) => (
+                      <img
+                        key={u}
+                        src={u}
+                        alt=""
+                        className="detailPhoto"
+                        loading="lazy"
+                        style={{ cursor: "pointer" }}
+                        onClick={() => openViewer(activeUrls, idx)}
+                      />
                     ))}
                   </div>
                 ) : (
@@ -239,10 +407,34 @@ export default function History() {
           ) : null}
         </div>
 
-        <div className="modalFooter">
-          <button className="btn" type="button" onClick={() => setOpen(false)}>Закрити</button>
+        <div className="modalFooter" style={{ display: "flex", gap: 10, justifyContent: "space-between", flexWrap: "wrap" }}>
+          <button
+            className="btnSecondary"
+            type="button"
+            onClick={deleteActiveEvent}
+            disabled={busyDelete}
+            style={{
+              borderColor: "rgba(239,68,68,.25)",
+              background: "rgba(239,68,68,.10)",
+              color: "#991B1B",
+              fontWeight: 950,
+            }}
+          >
+            {busyDelete ? "Видаляю..." : "Видалити запис"}
+          </button>
+
+          <button className="btn" type="button" onClick={() => setOpen(false)}>
+            Закрити
+          </button>
         </div>
       </Modal>
+
+      <PhotoViewer
+        open={viewerOpen}
+        urls={viewerUrls}
+        startIndex={viewerIndex}
+        onClose={() => setViewerOpen(false)}
+      />
     </section>
   );
 }
