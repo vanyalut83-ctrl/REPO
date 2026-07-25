@@ -1,3 +1,4 @@
+// src/pages/History.jsx
 import { useEffect, useMemo, useRef, useState } from "react";
 import { db } from "../services/supabase";
 import { getPublicPhotoUrl } from "../services/photos";
@@ -8,6 +9,7 @@ function normalizeItemPhotoPath(itemId, p) {
   if (s.includes("/")) return s;
   return `${itemId}/${s}`;
 }
+
 function uniq(arr) {
   const seen = new Set();
   const out = [];
@@ -19,10 +21,12 @@ function uniq(arr) {
   }
   return out;
 }
+
 function money(n) {
   const v = Number(n || 0);
   return v.toLocaleString("uk-UA", { maximumFractionDigits: 2 });
 }
+
 function startOfDayISO(dateStr) {
   const d = new Date(dateStr + "T00:00:00");
   return d.toISOString();
@@ -32,9 +36,10 @@ function endOfDayISO(dateStr) {
   d.setDate(d.getDate() + 1);
   return d.toISOString();
 }
+
 function badge(row) {
   if (row.type === "delivered") return { text: "Отримано", tone: "green" };
-  if (row.type === "return") return { text: "Скасовано/Повернено", tone: "red" };
+  if (row.type === "refused") return { text: "Відмова", tone: "red" };
   return { text: row.type, tone: "gray" };
 }
 
@@ -107,7 +112,7 @@ export default function History() {
   const [err, setErr] = useState("");
 
   const [q, setQ] = useState("");
-  const [type, setType] = useState("all"); // all | delivered | return
+  const [type, setType] = useState("all"); // all | delivered | refused
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -200,23 +205,34 @@ export default function History() {
     if (!active?.event_id) return;
 
     const ok = window.confirm(
-      "Видалити цей запис з історії?\n" +
-        "Дія відкотить лічильники (в доставку/на склад) і прибере запис з прибутку."
+      "Видалити цей запис з історії?\n\n" +
+        "- Для 'Отримано' буде відкат лічильників (через RPC).\n" +
+        "- Для 'Відмова' видалиться тільки запис відправлення зі статусом refused."
     );
     if (!ok) return;
 
     setBusyDelete(true);
     setErr("");
     try {
-      const { error } = await db.rpc("delete_history_event", {
-        p_event_id: active.event_id,
-      });
-      if (error) throw error;
+      if (active.type === "delivered") {
+        const { error } = await db.rpc("delete_history_event", {
+          p_event_id: active.event_id,
+        });
+        if (error) throw error;
+      } else if (active.type === "refused") {
+        // refused у нас — це ship event (status='refused') у item_events
+        const { error } = await db
+          .from("item_events")
+          .delete()
+          .eq("id", active.event_id)
+          .eq("type", "ship")
+          .eq("status", "refused");
+        if (error) throw error;
+      }
 
       setOpen(false);
       setActive(null);
-
-      await load(); // перезавантажити список з поточними фільтрами
+      await load();
     } catch (e) {
       setErr(e?.message ?? "Помилка видалення запису");
     } finally {
@@ -243,7 +259,7 @@ export default function History() {
         >
           <option value="all">Всі</option>
           <option value="delivered">Отримано</option>
-          <option value="return">Скасовано/Повернено</option>
+          <option value="refused">Відмова</option>
         </select>
 
         <input
@@ -301,24 +317,30 @@ export default function History() {
                 <span>К-сть</span>
                 <b>{r.qty}</b>
               </div>
-              <div className="histRow">
-                <span>Собівартість (сума)</span>
-                <b>₴ {money(r.cost_total)}</b>
-              </div>
-              <div className="histRow">
-                <span>Сума</span>
-                <b>₴ {money(r.amount)}</b>
-              </div>
-              <div className="histRow">
-                <span>Прибуток</span>
-                <b
-                  style={{
-                    color: Number(r.profit) >= 0 ? "#067647" : "#991B1B",
-                  }}
-                >
-                  ₴ {money(r.profit)}
-                </b>
-              </div>
+
+              {r.type === "delivered" ? (
+                <>
+                  <div className="histRow">
+                    <span>Собівартість (сума)</span>
+                    <b>₴ {money(r.cost_total)}</b>
+                  </div>
+                  <div className="histRow">
+                    <span>Сума</span>
+                    <b>₴ {money(r.amount)}</b>
+                  </div>
+                  <div className="histRow">
+                    <span>Прибуток</span>
+                    <b style={{ color: Number(r.profit) >= 0 ? "#067647" : "#991B1B" }}>
+                      ₴ {money(r.profit)}
+                    </b>
+                  </div>
+                </>
+              ) : (
+                <div className="histRow">
+                  <span>Статус</span>
+                  <b>Відмова</b>
+                </div>
+              )}
 
               <div className="histMini">
                 <div>
@@ -361,27 +383,28 @@ export default function History() {
                 {active.sku ? ` • SKU-${active.sku}` : ""}
               </div>
 
-              <div className="detailGrid">
-                <div><span>К-сть</span><b>{active.qty}</b></div>
-                <div><span>Собівартість/шт</span><b>₴ {money(active.cost)}</b></div>
-                <div><span>Ціна/шт</span><b>₴ {money(active.sale_price)}</b></div>
-                <div><span>Собівартість (сума)</span><b>₴ {money(active.cost_total)}</b></div>
-                <div><span>Сума</span><b>₴ {money(active.amount)}</b></div>
-                <div>
-                  <span>Прибуток</span>
-                  <b style={{ color: Number(active.profit) >= 0 ? "#067647" : "#991B1B" }}>
-                    ₴ {money(active.profit)}
-                  </b>
-                </div>
-              </div>
-
               <div className="detailBlock">
                 <div className="detailBlockTitle">Доставка</div>
+                <div className="detailLine"><b>Тип:</b> {active.type === "delivered" ? "Отримано" : "Відмова"}</div>
                 <div className="detailLine"><b>Отримувач:</b> {active.full_name || "—"}</div>
                 <div className="detailLine"><b>Тел:</b> {active.phone || "—"}</div>
                 <div className="detailLine"><b>Місто:</b> {active.city || "—"}</div>
                 <div className="detailLine"><b>Відділення:</b> {active.branch || "—"}</div>
+                <div className="detailLine"><b>К-сть:</b> {active.qty}</div>
               </div>
+
+              {active.type === "delivered" ? (
+                <div className="detailGrid">
+                  <div><span>Собівартість (сума)</span><b>₴ {money(active.cost_total)}</b></div>
+                  <div><span>Сума</span><b>₴ {money(active.amount)}</b></div>
+                  <div>
+                    <span>Прибуток</span>
+                    <b style={{ color: Number(active.profit) >= 0 ? "#067647" : "#991B1B" }}>
+                      ₴ {money(active.profit)}
+                    </b>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="detailBlock">
                 <div className="detailBlockTitle">Фото (клік — відкрити)</div>
@@ -407,7 +430,15 @@ export default function History() {
           ) : null}
         </div>
 
-        <div className="modalFooter" style={{ display: "flex", gap: 10, justifyContent: "space-between", flexWrap: "wrap" }}>
+        <div
+          className="modalFooter"
+          style={{
+            display: "flex",
+            gap: 10,
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+          }}
+        >
           <button
             className="btnSecondary"
             type="button"
