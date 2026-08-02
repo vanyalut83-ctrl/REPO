@@ -219,7 +219,7 @@ export default function Stock() {
     color: "",
     size: "",
     sku: "",
-    note: "",
+    note: "", // тег
     cost: "0",
     sale_price: "0",
     qty_in_stock: "0",
@@ -252,7 +252,8 @@ export default function Stock() {
   const [shipForm, setShipForm] = useState({
     full_name: "",
     phone: "",
-    ttn: "",        // <-- НОВЕ: ТТН тільки при відправленні
+    ttn: "",             // ТТН відправлення
+    delivery_cost: "",   // вартість доставки цього замовлення (опц.)
     city: "",
     branch: "",
     qty: "1",
@@ -288,9 +289,7 @@ export default function Stock() {
       if (!files.length) return;
       setter((prev) => [
         ...prev,
-        ...files
-          .filter((f) => f.type?.startsWith("image/"))
-          .map((f) => ({ file: f, url: URL.createObjectURL(f) })),
+        ...files.filter((f) => f.type?.startsWith("image/")).map((f) => ({ file: f, url: URL.createObjectURL(f) })),
       ]);
     };
   }
@@ -306,6 +305,7 @@ export default function Stock() {
     };
   }
 
+  // пошук + тег
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return items;
@@ -315,6 +315,7 @@ export default function Stock() {
     });
   }, [items, q]);
 
+  // групування по product_id
   const groups = useMemo(() => {
     const map = new Map();
 
@@ -343,6 +344,7 @@ export default function Stock() {
         (a, b) => (a.color || "").localeCompare(b.color || "") || (a.size || "").localeCompare(b.size || "")
       );
 
+      // cover: 1-е фото кожної варіації
       const coverUrls = uniq(
         variantsSorted
           .map((v) => {
@@ -391,18 +393,12 @@ export default function Stock() {
       qty_in_stock: "0",
       qty_in_delivery: "0",
     });
-    setCreatePhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setCreatePhotos((prev) => { revokePreviews(prev); return []; });
     setCreateOpen(true);
   }
   function closeCreate() {
     setCreateOpen(false);
-    setCreatePhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setCreatePhotos((prev) => { revokePreviews(prev); return []; });
   }
 
   async function submitCreate(e) {
@@ -430,6 +426,7 @@ export default function Stock() {
     try {
       const created = await createItem(payload);
 
+      // фото складу тільки тут/в редагуванні
       for (const p of createPhotos) {
         const path = await uploadItemPhoto({ itemId: created.id, file: p.file });
         await appendItemPhotoPath(created.id, path);
@@ -458,19 +455,13 @@ export default function Stock() {
       qty_in_stock: String(v.qty_in_stock ?? 0),
       qty_in_delivery: String(v.qty_in_delivery ?? 0),
     });
-    setEditNewPhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setEditNewPhotos((prev) => { revokePreviews(prev); return []; });
     setEditOpen(true);
   }
   function closeEditVariant() {
     setEditOpen(false);
     setActiveVariant(null);
-    setEditNewPhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setEditNewPhotos((prev) => { revokePreviews(prev); return []; });
   }
 
   async function saveEditVariant() {
@@ -513,7 +504,7 @@ export default function Stock() {
 
   async function archiveVariant() {
     if (!activeVariant) return;
-    const ok = window.confirm("Прибрати з Складу (архів)? Історія та прибуток залишаться.");
+    const ok = window.confirm("Прибрати зі Складу (архів)? Історія та прибуток залишаться.");
     if (!ok) return;
 
     setBusyArchive(true);
@@ -537,24 +528,19 @@ export default function Stock() {
     setShipForm({
       full_name: "",
       phone: "",
-      ttn: "",     // <-- reset
+      ttn: "",
+      delivery_cost: "",
       city: "",
       branch: "",
       qty: "1",
     });
-    setShipPhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setShipPhotos((prev) => { revokePreviews(prev); return []; });
     setShipOpen(true);
   }
   function closeShip() {
     setShipOpen(false);
     setShipVariant(null);
-    setShipPhotos((prev) => {
-      revokePreviews(prev);
-      return [];
-    });
+    setShipPhotos((prev) => { revokePreviews(prev); return []; });
   }
 
   async function uploadShipmentPhoto(eventId, file) {
@@ -580,13 +566,19 @@ export default function Stock() {
 
     const full_name = shipForm.full_name.trim();
     const phone = shipForm.phone.trim();
-    const ttn = shipForm.ttn.trim(); // <-- НОВЕ
+    const ttn = shipForm.ttn.trim();
     const city = shipForm.city.trim();
     const branch = shipForm.branch.trim();
     if (!full_name || !phone || !city || !branch) return setErr("Заповни ПІБ, телефон, місто, відділення");
 
+    // доставка
+    const deliveryRaw = String(shipForm.delivery_cost ?? "").trim();
+    const deliveryTotal = deliveryRaw === "" ? null : toNumber(deliveryRaw);
+    const extraPerUnit = deliveryTotal && deliveryTotal > 0 ? deliveryTotal / qty : 0;
+
     setBusyShip(true);
     try {
+      // 1) створюємо ship + рухи складу
       const { data: eventId, error: rpcErr } = await db.rpc("ship_item", {
         p_item_id: shipVariant.id,
         p_qty: qty,
@@ -597,24 +589,37 @@ export default function Stock() {
       });
       if (rpcErr) throw rpcErr;
 
+      // 2) фото доставки
       const uploaded = [];
       for (const p of shipPhotos) uploaded.push(await uploadShipmentPhoto(eventId, p.file));
 
-      const { data: row, error: e1 } = await db.from("item_events").select("meta").eq("id", eventId).single();
+      // 3) meta + (опціонально) оновити cost в ship-події
+      const { data: row, error: e1 } = await db.from("item_events").select("meta,cost").eq("id", eventId).single();
       if (e1) throw e1;
 
       const meta = row?.meta ?? {};
+      const baseCost = toNumber(shipVariant.cost); // базова собівартість зі складу (саме для цього замовлення)
+      const newShipCost = deliveryTotal && deliveryTotal > 0 ? (baseCost + extraPerUnit) : null;
+
       const nextMeta = {
         ...meta,
-        // збережемо existing phone/full_name/city/branch і додамо/оновимо:
-        ttn: ttn || meta.ttn || null, // <-- НОВЕ: ТТН відправлення
+        ttn: ttn || null,
         color: shipVariant.color ?? null,
         size: shipVariant.size ?? null,
         sku: shipVariant.sku ?? null,
         ship_photo_paths: uniq([...(meta.ship_photo_paths ?? []), ...uploaded]),
+
+        // щоб Home міг показати/редагувати розрахунки
+        base_cost: baseCost,
+        delivery_cost_total: deliveryTotal && deliveryTotal > 0 ? deliveryTotal : null,
+        delivery_cost_per_unit: deliveryTotal && deliveryTotal > 0 ? extraPerUnit : null,
       };
 
-      const { error: e2 } = await db.from("item_events").update({ meta: nextMeta }).eq("id", eventId);
+      const updatePayload = newShipCost !== null
+        ? { meta: nextMeta, cost: newShipCost }
+        : { meta: nextMeta };
+
+      const { error: e2 } = await db.from("item_events").update(updatePayload).eq("id", eventId);
       if (e2) throw e2;
 
       closeShip();
@@ -652,9 +657,9 @@ export default function Stock() {
       <button className="fabAdd" type="button" onClick={() => openCreate({})}>+ Додати</button>
       <div style={{ height: 84 }} />
 
-      <input ref={createInputRef} type="file" accept="image/*" multiple onChange={(e) => onFilesSelected(setCreatePhotos)(e)} style={{ display: "none" }} />
-      <input ref={editInputRef} type="file" accept="image/*" multiple onChange={(e) => onFilesSelected(setEditNewPhotos)(e)} style={{ display: "none" }} />
-      <input ref={shipInputRef} type="file" accept="image/*" multiple onChange={(e) => onFilesSelected(setShipPhotos)(e)} style={{ display: "none" }} />
+      <input ref={createInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setCreatePhotos)} style={{ display: "none" }} />
+      <input ref={editInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setEditNewPhotos)} style={{ display: "none" }} />
+      <input ref={shipInputRef} type="file" accept="image/*" multiple onChange={onFilesSelected(setShipPhotos)} style={{ display: "none" }} />
 
       {/* GROUP */}
       <Modal
@@ -665,17 +670,7 @@ export default function Stock() {
         footer={
           <div className="modalFooterSplit">
             <button className="btnSecondary" type="button" onClick={closeGroup}>Закрити</button>
-            <button
-              className="btn"
-              type="button"
-              onClick={() =>
-                openCreate({
-                  product_id: activeGroup?.product_id,
-                  title: activeGroup?.title,
-                  note: activeGroup?.tag,
-                })
-              }
-            >
+            <button className="btn" type="button" onClick={() => openCreate({ product_id: activeGroup?.product_id, title: activeGroup?.title, note: activeGroup?.tag })}>
               + Додати варіант
             </button>
           </div>
@@ -699,6 +694,7 @@ export default function Stock() {
                       <b>{v.color || "—"}</b> • <b>{v.size || "—"}</b>
                       {v.sku ? <span className="muted"> • SKU-{v.sku}</span> : null}
                     </div>
+
                     <div className="variantMeta">
                       <span>Наявн: <b>{v.qty_in_stock ?? 0}</b></span>
                       <span>Дост: <b>{v.qty_in_delivery ?? 0}</b></span>
@@ -737,11 +733,7 @@ export default function Stock() {
           </div>
         }
       >
-        <AddPhotoCarousel
-          photos={createPhotos}
-          onAdd={() => createInputRef.current?.click()}
-          onRemove={removePhoto(setCreatePhotos)}
-        />
+        <AddPhotoCarousel photos={createPhotos} onAdd={() => createInputRef.current?.click()} onRemove={removePhoto(setCreatePhotos)} />
 
         <form id="createVariantForm" onSubmit={submitCreate} className="form">
           <label>Назва
@@ -835,11 +827,7 @@ export default function Stock() {
             </div>
 
             {editNewPhotos.length ? (
-              <AddPhotoCarousel
-                photos={editNewPhotos}
-                onAdd={() => editInputRef.current?.click()}
-                onRemove={removePhoto(setEditNewPhotos)}
-              />
+              <AddPhotoCarousel photos={editNewPhotos} onAdd={() => editInputRef.current?.click()} onRemove={removePhoto(setEditNewPhotos)} />
             ) : null}
 
             <form className="form" onSubmit={(e) => e.preventDefault()}>
@@ -917,6 +905,17 @@ export default function Stock() {
           <label>
             ТТН (відправлення)
             <input className="input" value={shipForm.ttn} onChange={(e) => setShipForm({ ...shipForm, ttn: e.target.value })} placeholder="Напр. 20400000000000" />
+          </label>
+
+          <label>
+            Вартість доставки (₴, опц.)
+            <input
+              className="input"
+              inputMode="decimal"
+              value={shipForm.delivery_cost}
+              onChange={(e) => setShipForm({ ...shipForm, delivery_cost: e.target.value })}
+              placeholder="Напр. 80"
+            />
           </label>
 
           <div className="row2">
