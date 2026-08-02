@@ -147,13 +147,12 @@ function GroupCard({ group, onOpen }) {
         )}
       </div>
 
-      {/* 1 фото з кожної варіації -> свайп */}
       <PhotoSquare urls={group.coverUrls} />
 
       <div className="pBody compact">
         <div className="pTitle">{group.title}</div>
         <div className="pSub">
-          <b>{qty}</b> шт • достав: <b>{group.qty_in_delivery_sum}</b>
+          <b>{qty}</b> шт • достав: <b>{group.qty_in_delivery_sum}</b> • очік: <b>{group.qty_expected_sum}</b>
         </div>
 
         <div className="pFooter">
@@ -215,12 +214,12 @@ export default function Stock() {
   const [createOpen, setCreateOpen] = useState(false);
   const [busyCreate, setBusyCreate] = useState(false);
   const [createForm, setCreateForm] = useState({
-    product_id: "", // тільки коли додаємо варіант в існуючий товар
+    product_id: "",
     title: "",
     color: "",
     size: "",
     sku: "",
-    note: "", // тег
+    note: "",
     cost: "0",
     sale_price: "0",
     qty_in_stock: "0",
@@ -253,6 +252,7 @@ export default function Stock() {
   const [shipForm, setShipForm] = useState({
     full_name: "",
     phone: "",
+    ttn: "",        // <-- НОВЕ: ТТН тільки при відправленні
     city: "",
     branch: "",
     qty: "1",
@@ -288,7 +288,9 @@ export default function Stock() {
       if (!files.length) return;
       setter((prev) => [
         ...prev,
-        ...files.filter((f) => f.type?.startsWith("image/")).map((f) => ({ file: f, url: URL.createObjectURL(f) })),
+        ...files
+          .filter((f) => f.type?.startsWith("image/"))
+          .map((f) => ({ file: f, url: URL.createObjectURL(f) })),
       ]);
     };
   }
@@ -304,7 +306,6 @@ export default function Stock() {
     };
   }
 
-  // ПОШУК: + tag(note)
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return items;
@@ -314,13 +315,13 @@ export default function Stock() {
     });
   }, [items, q]);
 
-  // ГРУПУВАННЯ ТЕПЕР ПО product_id (а не по title!)
   const groups = useMemo(() => {
     const map = new Map();
 
     for (const it of filtered) {
       const key = it.product_id;
       if (!key) continue;
+
       if (!map.has(key)) {
         map.set(key, {
           product_id: key,
@@ -336,13 +337,12 @@ export default function Stock() {
     for (const g of map.values()) {
       const qty_in_stock_sum = g.variants.reduce((a, x) => a + (x.qty_in_stock ?? 0), 0);
       const qty_in_delivery_sum = g.variants.reduce((a, x) => a + (x.qty_in_delivery ?? 0), 0);
+      const qty_expected_sum = g.variants.reduce((a, x) => a + (x.qty_expected ?? 0), 0);
 
-      // порядок варіацій стабільний
-      const variantsSorted = [...g.variants].sort((a, b) =>
-        (a.color || "").localeCompare(b.color || "") || (a.size || "").localeCompare(b.size || "")
+      const variantsSorted = [...g.variants].sort(
+        (a, b) => (a.color || "").localeCompare(b.color || "") || (a.size || "").localeCompare(b.size || "")
       );
 
-      // coverUrls: перше фото кожної варіації
       const coverUrls = uniq(
         variantsSorted
           .map((v) => {
@@ -358,6 +358,7 @@ export default function Stock() {
         variants: variantsSorted,
         qty_in_stock_sum,
         qty_in_delivery_sum,
+        qty_expected_sum,
         variantsCount: variantsSorted.length,
         coverUrls,
       });
@@ -376,8 +377,6 @@ export default function Stock() {
     setActiveGroup(null);
   }
 
-  // CREATE: новий товар -> product_id не задаємо (створиться дефолтом)
-  // CREATE: нова варіація -> product_id беремо з групи
   function openCreate(initial = {}) {
     setErr("");
     setCreateForm({
@@ -392,12 +391,18 @@ export default function Stock() {
       qty_in_stock: "0",
       qty_in_delivery: "0",
     });
-    setCreatePhotos((prev) => { revokePreviews(prev); return []; });
+    setCreatePhotos((prev) => {
+      revokePreviews(prev);
+      return [];
+    });
     setCreateOpen(true);
   }
   function closeCreate() {
     setCreateOpen(false);
-    setCreatePhotos((prev) => { revokePreviews(prev); return []; });
+    setCreatePhotos((prev) => {
+      revokePreviews(prev);
+      return [];
+    });
   }
 
   async function submitCreate(e) {
@@ -419,13 +424,12 @@ export default function Stock() {
       qty_in_delivery: toInt(createForm.qty_in_delivery),
     };
 
-    if (createForm.product_id) payload.product_id = createForm.product_id; // тільки для варіації
+    if (createForm.product_id) payload.product_id = createForm.product_id;
 
     setBusyCreate(true);
     try {
       const created = await createItem(payload);
 
-      // Фото складу додаємо тільки тут і в редагуванні
       for (const p of createPhotos) {
         const path = await uploadItemPhoto({ itemId: created.id, file: p.file });
         await appendItemPhotoPath(created.id, path);
@@ -454,13 +458,19 @@ export default function Stock() {
       qty_in_stock: String(v.qty_in_stock ?? 0),
       qty_in_delivery: String(v.qty_in_delivery ?? 0),
     });
-    setEditNewPhotos((prev) => { revokePreviews(prev); return []; });
+    setEditNewPhotos((prev) => {
+      revokePreviews(prev);
+      return [];
+    });
     setEditOpen(true);
   }
   function closeEditVariant() {
     setEditOpen(false);
     setActiveVariant(null);
-    setEditNewPhotos((prev) => { revokePreviews(prev); return []; });
+    setEditNewPhotos((prev) => {
+      revokePreviews(prev);
+      return [];
+    });
   }
 
   async function saveEditVariant() {
@@ -501,7 +511,6 @@ export default function Stock() {
     }
   }
 
-  // ВИДАЛЕННЯ -> АРХІВ (історія/прибуток НЕ зникають)
   async function archiveVariant() {
     if (!activeVariant) return;
     const ok = window.confirm("Прибрати з Складу (архів)? Історія та прибуток залишаться.");
@@ -525,14 +534,27 @@ export default function Stock() {
   function openShip(v) {
     setErr("");
     setShipVariant(v);
-    setShipForm({ full_name: "", phone: "", city: "", branch: "", qty: "1" });
-    setShipPhotos((prev) => { revokePreviews(prev); return []; });
+    setShipForm({
+      full_name: "",
+      phone: "",
+      ttn: "",     // <-- reset
+      city: "",
+      branch: "",
+      qty: "1",
+    });
+    setShipPhotos((prev) => {
+      revokePreviews(prev);
+      return [];
+    });
     setShipOpen(true);
   }
   function closeShip() {
     setShipOpen(false);
     setShipVariant(null);
-    setShipPhotos((prev) => { revokePreviews(prev); return []; });
+    setShipPhotos((prev) => {
+      revokePreviews(prev);
+      return [];
+    });
   }
 
   async function uploadShipmentPhoto(eventId, file) {
@@ -558,6 +580,7 @@ export default function Stock() {
 
     const full_name = shipForm.full_name.trim();
     const phone = shipForm.phone.trim();
+    const ttn = shipForm.ttn.trim(); // <-- НОВЕ
     const city = shipForm.city.trim();
     const branch = shipForm.branch.trim();
     if (!full_name || !phone || !city || !branch) return setErr("Заповни ПІБ, телефон, місто, відділення");
@@ -577,13 +600,14 @@ export default function Stock() {
       const uploaded = [];
       for (const p of shipPhotos) uploaded.push(await uploadShipmentPhoto(eventId, p.file));
 
-      // тільки ship_photo_paths (склад НЕ чіпаємо)
       const { data: row, error: e1 } = await db.from("item_events").select("meta").eq("id", eventId).single();
       if (e1) throw e1;
 
       const meta = row?.meta ?? {};
       const nextMeta = {
         ...meta,
+        // збережемо existing phone/full_name/city/branch і додамо/оновимо:
+        ttn: ttn || meta.ttn || null, // <-- НОВЕ: ТТН відправлення
         color: shipVariant.color ?? null,
         size: shipVariant.size ?? null,
         sku: shipVariant.sku ?? null,
@@ -641,7 +665,17 @@ export default function Stock() {
         footer={
           <div className="modalFooterSplit">
             <button className="btnSecondary" type="button" onClick={closeGroup}>Закрити</button>
-            <button className="btn" type="button" onClick={() => openCreate({ product_id: activeGroup?.product_id, title: activeGroup?.title, note: activeGroup?.tag })}>
+            <button
+              className="btn"
+              type="button"
+              onClick={() =>
+                openCreate({
+                  product_id: activeGroup?.product_id,
+                  title: activeGroup?.title,
+                  note: activeGroup?.tag,
+                })
+              }
+            >
               + Додати варіант
             </button>
           </div>
@@ -666,8 +700,9 @@ export default function Stock() {
                       {v.sku ? <span className="muted"> • SKU-{v.sku}</span> : null}
                     </div>
                     <div className="variantMeta">
-                      <span>Наявн: <b>{v.qty_in_stock}</b></span>
-                      <span>Дост: <b>{v.qty_in_delivery}</b></span>
+                      <span>Наявн: <b>{v.qty_in_stock ?? 0}</b></span>
+                      <span>Дост: <b>{v.qty_in_delivery ?? 0}</b></span>
+                      <span>Очік: <b>{v.qty_expected ?? 0}</b></span>
                       <span>₴ <b>{v.sale_price}</b></span>
                     </div>
                   </div>
@@ -702,7 +737,11 @@ export default function Stock() {
           </div>
         }
       >
-        <AddPhotoCarousel photos={createPhotos} onAdd={() => createInputRef.current?.click()} onRemove={removePhoto(setCreatePhotos)} />
+        <AddPhotoCarousel
+          photos={createPhotos}
+          onAdd={() => createInputRef.current?.click()}
+          onRemove={removePhoto(setCreatePhotos)}
+        />
 
         <form id="createVariantForm" onSubmit={submitCreate} className="form">
           <label>Назва
@@ -753,6 +792,7 @@ export default function Stock() {
         onClose={closeEditVariant}
         title="Редагувати"
         subtitle={activeVariant ? `${activeVariant.title} • ${activeVariant.color || "—"} • ${activeVariant.size || "—"}` : ""}
+        footerClassName="editFooterLift"
         footer={
           <div className="modalFooterSplit">
             <button className="iconDanger" type="button" onClick={archiveVariant} disabled={busyArchive || busyEdit} title="Прибрати зі складу (архів)">
@@ -795,7 +835,11 @@ export default function Stock() {
             </div>
 
             {editNewPhotos.length ? (
-              <AddPhotoCarousel photos={editNewPhotos} onAdd={() => editInputRef.current?.click()} onRemove={removePhoto(setEditNewPhotos)} />
+              <AddPhotoCarousel
+                photos={editNewPhotos}
+                onAdd={() => editInputRef.current?.click()}
+                onRemove={removePhoto(setEditNewPhotos)}
+              />
             ) : null}
 
             <form className="form" onSubmit={(e) => e.preventDefault()}>
@@ -869,6 +913,11 @@ export default function Stock() {
               <input className="input" inputMode="tel" value={shipForm.phone} onChange={(e) => setShipForm({ ...shipForm, phone: e.target.value })} />
             </label>
           </div>
+
+          <label>
+            ТТН (відправлення)
+            <input className="input" value={shipForm.ttn} onChange={(e) => setShipForm({ ...shipForm, ttn: e.target.value })} placeholder="Напр. 20400000000000" />
+          </label>
 
           <div className="row2">
             <label>Місто

@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 const items = [
   { to: "/", label: "Головна" },
   { to: "/stock", label: "Склад" },
+  { to: "/returns", label: "Повернення" },
   { to: "/history", label: "Історія" },
   { to: "/income", label: "Прибуток" },
 ];

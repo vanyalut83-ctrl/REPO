@@ -39,13 +39,9 @@ function Modal({ open, onClose, title, subtitle, children, footer }) {
             <div className="modalTitle">{title}</div>
             {subtitle ? <div className="modalSubtitle">{subtitle}</div> : null}
           </div>
-          <button className="iconBtn" type="button" onClick={onClose}>
-            ✕
-          </button>
+          <button className="iconBtn" type="button" onClick={onClose}>✕</button>
         </div>
-
         <div className="modalBody">{children}</div>
-
         {footer ? <div className="modalFooter">{footer}</div> : null}
       </div>
     </div>
@@ -80,11 +76,8 @@ function PhotoViewer({ open, urls, startIndex, onClose }) {
     <div className="viewerOverlay" onClick={onClose}>
       <div className="viewerTop" onClick={(e) => e.stopPropagation()}>
         <div className="viewerCount">{urls?.length ? `${idx + 1} / ${urls.length}` : ""}</div>
-        <button className="viewerClose" type="button" onClick={onClose}>
-          Закрити
-        </button>
+        <button className="viewerClose" type="button" onClick={onClose}>Закрити</button>
       </div>
-
       <div className="viewerRow" ref={rowRef} onScroll={onScroll} onClick={(e) => e.stopPropagation()}>
         {urls.map((u) => (
           <div className="viewerSlide" key={u}>
@@ -120,6 +113,10 @@ export default function Home() {
   const [viewerOpen, setViewerOpen] = useState(false);
   const [viewerUrls, setViewerUrls] = useState([]);
   const [viewerIndex, setViewerIndex] = useState(0);
+
+  // refusal ttn modal
+  const [refuseOpen, setRefuseOpen] = useState(false);
+  const [refuseTTN, setRefuseTTN] = useState("");
 
   function openViewer(urls, start = 0) {
     setViewerUrls(urls);
@@ -165,9 +162,7 @@ export default function Home() {
     }
   }
 
-  useEffect(() => {
-    loadAll();
-  }, []);
+  useEffect(() => { loadAll(); }, []);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -177,7 +172,7 @@ export default function Home() {
       const m = ev.meta || {};
       const color = m.color ?? it?.color ?? "";
       const size = m.size ?? it?.size ?? "";
-      const hay = `${m.full_name ?? ""} ${m.phone ?? ""} ${color} ${size} ${it?.title ?? ""} ${it?.sku ?? ""}`.toLowerCase();
+      const hay = `${m.full_name ?? ""} ${m.phone ?? ""} ${m.ttn ?? ""} ${m.ttn_return ?? ""} ${color} ${size} ${it?.title ?? ""} ${it?.sku ?? ""}`.toLowerCase();
       return hay.includes(s);
     });
   }, [shipments, q]);
@@ -218,12 +213,24 @@ export default function Home() {
     }
   }
 
-  async function markRefused(id) {
+  function openRefuseTTN() {
+    setRefuseTTN("");
+    setRefuseOpen(true);
+  }
+
+  async function confirmRefuse() {
+    if (!active) return;
     setErr("");
-    setBusyId(id);
+    setBusyId(active.id);
     try {
-      const { error } = await db.rpc("shipment_refused", { p_ship_event_id: id });
+      const { error } = await db.rpc("shipment_refused_ttn", {
+        p_ship_event_id: active.id,
+        p_ttn_return: refuseTTN,
+      });
       if (error) throw error;
+
+      // після відмови переходить в return_waiting -> з Home зникне
+      setRefuseOpen(false);
       setOpen(false);
       setActive(null);
       await loadAll();
@@ -244,14 +251,11 @@ export default function Home() {
       .filter(Boolean)
       .map(getPublicPhotoUrl);
 
-    // ship_photo_paths — тільки для доставки
     const shipPaths =
       Array.isArray(m.ship_photo_paths) ? m.ship_photo_paths :
-      Array.isArray(m.photo_paths) ? m.photo_paths : []; // fallback для старих
+      Array.isArray(m.photo_paths) ? m.photo_paths : [];
 
     const shipUrls = shipPaths.map(getPublicPhotoUrl);
-
-    // порядок: спочатку склад, потім відправлення
     return uniq([...itemUrls, ...shipUrls]);
   }, [active]);
 
@@ -263,7 +267,6 @@ export default function Home() {
           <div className="homeMetricValue">₴ {money(stats.stock_value)}</div>
           <div className="homeMetricHint">шт * собівартість</div>
         </div>
-
         <div className="homeMetric">
           <div className="homeMetricLabel">Можливий прибуток</div>
           <div className="homeMetricValue">₴ {money(stats.potential_profit)}</div>
@@ -282,7 +285,7 @@ export default function Home() {
           className="input"
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="Пошук: ПІБ / телефон / колір / розмір..."
+          placeholder="Пошук: ПІБ / телефон / ТТН..."
           style={{ flex: "1 1 260px" }}
         />
         <button className="btnSecondary" type="button" onClick={loadAll}>Оновити</button>
@@ -304,7 +307,7 @@ export default function Home() {
               <div className="shipTileLeft">
                 <div className={`shipPill ${st.tone}`}>{st.text}</div>
                 <div className="shipName">{m.full_name || "—"}</div>
-                <div className="shipPhone">{m.phone || ""}</div>
+                <div className="shipPhone">ТТН: {m.ttn || "—"}</div>
               </div>
               <div className="shipTileRight">
                 <div className="shipSpec"><span>Колір:</span> <b>{color}</b></div>
@@ -316,44 +319,44 @@ export default function Home() {
         })}
       </div>
 
-      {/* DETAILS MODAL */}
       <Modal
         open={open}
         onClose={() => { setOpen(false); setActive(null); }}
         title="Відправлення"
-        subtitle={active ? `${active.meta?.full_name || "—"} • ${active.meta?.phone || ""}` : ""}
+        subtitle={active ? new Date(active.created_at).toLocaleString() : ""}
         footer={
-          <div className="modalFooterSplit">
-            <button className="btnSecondary" type="button" onClick={() => { setOpen(false); setActive(null); }}>
-              Закрити
-            </button>
-          </div>
-        }
-      >
-        {active ? (
-          <>
-            {/* КНОПКИ — ВИЩЕ (sticky всередині модалки) */}
-            <div className="shipActionBar">
-              {active.status === "waiting" ? (
+          active ? (
+            active.status === "waiting" ? (
+              <div className="modalFooterSplit">
+                <button className="btnSecondary" type="button" onClick={() => setOpen(false)}>Закрити</button>
                 <button className="btn" type="button" onClick={() => startTransit(active.id)} disabled={busyId === active.id}>
                   {busyId === active.id ? "..." : "Відправлено"}
                 </button>
-              ) : (
-                <div className="shipActionBar2">
-                  <button className="shipBtnDanger" type="button" onClick={() => markRefused(active.id)} disabled={busyId === active.id}>
+              </div>
+            ) : (
+              <div className="modalFooterSplit">
+                <button className="btnSecondary" type="button" onClick={() => setOpen(false)}>Закрити</button>
+                <div className="modalFooterRight">
+                  <button className="shipBtnDanger" type="button" onClick={openRefuseTTN} disabled={busyId === active.id}>
                     Відмова
                   </button>
                   <button className="shipBtnSuccess" type="button" onClick={() => markReceived(active.id)} disabled={busyId === active.id}>
                     Отримано
                   </button>
                 </div>
-              )}
-            </div>
-
-            {/* ДАТА — НИЖЧЕ в окремому блоці */}
+              </div>
+            )
+          ) : null
+        }
+      >
+        {active ? (
+          <>
             <div className="detailBlock">
               <div className="detailBlockTitle">{active.items?.title || "Товар"}</div>
-              <div className="detailLine"><b>Дата/час:</b> {new Date(active.created_at).toLocaleString()}</div>
+              <div className="detailLine"><b>ПІБ:</b> {active.meta?.full_name || "—"}</div>
+              <div className="detailLine"><b>Телефон:</b> {active.meta?.phone || "—"}</div>
+              <div className="detailLine"><b>ТТН (відправка):</b> {active.meta?.ttn || "—"}</div>
+              <div className="detailLine"><b>ТТН (повернення):</b> {active.meta?.ttn_return || "—"}</div>
               <div className="detailLine"><b>Місто:</b> {active.meta?.city || "—"}</div>
               <div className="detailLine"><b>Відділення:</b> {active.meta?.branch || "—"}</div>
               <div className="detailLine"><b>Колір:</b> {active.meta?.color ?? active.items?.color ?? "—"}</div>
@@ -362,18 +365,18 @@ export default function Home() {
             </div>
 
             <div className="detailBlock">
-              <div className="detailBlockTitle">Фото (натисни щоб відкрити)</div>
+              <div className="detailBlockTitle">Фото (клік — відкрити)</div>
               {activeUrls.length ? (
                 <div className="detailPhotos">
                   {activeUrls.map((u, idx) => (
                     <img
                       key={u}
+                      className="detailPhoto"
                       src={u}
                       alt=""
-                      className="detailPhoto"
                       loading="lazy"
-                      onClick={() => openViewer(activeUrls, idx)}
                       style={{ cursor: "pointer" }}
+                      onClick={() => openViewer(activeUrls, idx)}
                     />
                   ))}
                 </div>
@@ -383,6 +386,34 @@ export default function Home() {
             </div>
           </>
         ) : null}
+      </Modal>
+
+      {/* ВВЕДЕННЯ ТТН ПОВЕРНЕННЯ */}
+      <Modal
+        open={refuseOpen}
+        onClose={() => setRefuseOpen(false)}
+        title="Відмова"
+        subtitle="Введи ТТН повернення до тебе (опціонально)"
+        footer={
+          <div className="modalFooterSplit">
+            <button className="btnSecondary" type="button" onClick={() => setRefuseOpen(false)} disabled={busyId === active?.id}>
+              Скасувати
+            </button>
+            <button className="shipBtnDanger" type="button" onClick={confirmRefuse} disabled={busyId === active?.id}>
+              {busyId === active?.id ? "..." : "Підтвердити відмову"}
+            </button>
+          </div>
+        }
+      >
+        <label style={{ display: "grid", gap: 6 }}>
+          ТТН повернення
+          <input
+            className="input"
+            value={refuseTTN}
+            onChange={(e) => setRefuseTTN(e.target.value)}
+            placeholder="Напр. 20400000000000"
+          />
+        </label>
       </Modal>
 
       <PhotoViewer
