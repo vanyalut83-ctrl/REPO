@@ -2,6 +2,38 @@
   command = "npm run build"
   publish = "dist"
 
+# --- exceptions (must be BEFORE the catch-all) ---
+[[redirects]]
+  from = "/manifest.webmanifest"
+  to = "/manifest.webmanifest"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/icon-192.png"
+  to = "/icon-192.png"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/icon-512.png"
+  to = "/icon-512.png"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/icon-512-maskable.png"
+  to = "/icon-512-maskable.png"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/apple-touch-icon.png"
+  to = "/apple-touch-icon.png"
+  status = 200
+  force = true
+
+# --- SPA ---
 [[redirects]]
   from = "/*"
   to = "/index.html"
